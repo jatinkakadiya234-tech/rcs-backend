@@ -1,0 +1,1086 @@
+import bcrypt from "bcrypt";
+import axios from "axios";
+import User from "./UserModel.js";
+import WalletRequest from "./WalletRequestModel.js";
+import * as uuid from "uuid";
+const uuidv4 = uuid.v4;
+import dotenv from "dotenv";
+import cloudinary from "../utils/cloudinary.js";
+import Message from "../Message/MessageModel.js";
+dotenv.config();
+
+// --- Token cache ---
+let cachedJioToken = null;
+let tokenExpiry = null;
+
+// --- Fetch Jio OAuth Token with caching ---
+const fetchJioToken = async () => {
+  const now = Date.now();
+  if (cachedJioToken && tokenExpiry && now < tokenExpiry) return cachedJioToken;
+
+  const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${process.env.JIO_CLIENT_ID}&client_secret=${process.env.JIO_CLIENT_SECRET}&scope=read`;
+
+  const response = await axios.get(tokenUrl);
+  const newToken = response.data.access_token;
+
+  cachedJioToken = newToken;
+  tokenExpiry = now + 60 * 60 * 1000; // 1 hour
+  return newToken;
+};
+
+// --- Check RCS capability ---
+const checkRcsCapability = async (phoneNumber, token) => {
+  if (!phoneNumber || !token) return false;
+
+  const formattedPhone = phoneNumber.startsWith("+")
+    ? phoneNumber
+    : `+91${phoneNumber}`;
+
+  const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/capabilities`;
+
+  try {
+    const res = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 10000,
+    });
+    return res.data || false;
+  } catch (err) {
+    console.error(
+      `RCS API error for ${phoneNumber}:`,
+      err.response?.status || err.message
+    );
+    return false;
+  }
+};
+
+// --- ✅ Send Plain Text SMS (as per Jio v1.8) ---
+const sendJioSms = async (phoneNumber, content, token, type) => {
+  try {
+    // 🧹 Format phone number
+    let formattedPhone = phoneNumber
+      .toString()
+      .trim()
+      .replace(/[^0-9+]/g, "");
+    if (!formattedPhone.startsWith("+91"))
+      formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
+
+    const messageId = `msg_${uuidv4()}`;
+    const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
+
+    // ✅ Official payload structure (from Jio docs)
+    const payload = {
+      botId: process.env.JIO_ASSISTANT_ID,
+      content: content,
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 10000,
+    });
+
+    return {
+      phone: formattedPhone,
+      status: response.status,
+      response: response.data,
+      messageId,
+      timestamp: new Date().toISOString(),
+      result: "Message Sent Successfully",
+      type: type,
+      statusText: response.statusText,
+      _eventsCount: response.headers["x-events-count"] || null,
+      _messageStatus: response.headers["x-message-status"] || null,
+    };
+  } catch (error) {
+    console.error("❌ Jio API Error:", error.response?.data || error.message);
+    return {
+      phone: phoneNumber,
+      status: error.response?.status || 500,
+      response: { error: error.response?.data || error.message },
+      error: true,
+      timestamp: new Date().toISOString(),
+    };
+  }
+};
+
+// const sendRcsRichCard = async ({
+//   imageUrl,
+//   title,
+//   subtitle,
+//   phoneNumbers,
+//   callUrl,
+//   jioToken,
+//   type,
+// }) => {
+//   const results = [];
+//   await Promise.all(
+//     phoneNumbers.map(async (phone) => {
+//       const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
+//       const messageId = uuidv4();
+
+//       const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
+
+//       // const payload = {
+//       //   content: {
+//       //     richCardDetails: {
+//       //       Standalone: {
+//       //         cardOrientation: "VERTICAL",
+//       //         content: {
+//       //           cardTitle: title,
+//       //           cardDescription: subtitle,
+//       //           cardMedia: {
+//       //             mediaHeight: "MEDIUM",
+//       //             contentInfo: {
+//       //               fileUrl: imageUrl,
+//       //               thumbnailUrl: imageUrl,
+//       //             },
+//       //           },
+//       //           suggestions: [
+//       //             {
+//       //               Action: {
+//       //                 plainText: "Visit Website 🌐",
+//       //                 postback: { data: "visit_site" },
+//       //                 openUrl: { url: callUrl },
+//       //               },
+//       //             },
+//       //             {
+//       //               Action: {
+//       //                 plainText: "Call Us 📞",
+//       //                 postback: { data: "call_support" },
+//       //                 dialerAction: { phoneNumber: "+919999999999" },
+//       //               },
+//       //             },
+//       //             {
+//       //               Reply: {
+//       //                 plainText: "Stop",
+//       //                 postback: { data: "stop_msg" },
+//       //               },
+//       //             },
+//       //           ],
+//       //         },
+//       //       },
+//       //     },
+//       //   },
+//       // };
+
+//       if (type === "carousel") {
+//         const payload = {
+//           content: {
+//             richCardDetails: {
+//               carousel: {
+//                 cardWidth: "MEDIUM_WIDTH",
+//                 contents: [
+//                   {
+//                     cardTitle: "Explore the web securely",
+//                     cardDescription:
+//                       "Loaded with features like AdBlocker, Multiple search engines & VPN for Indians",
+//                     cardMedia: {
+//                       contentInfo: {
+//                         fileUrl:
+//                           "https://jfxv.akamaized.net/JBMCampaigns/JioSphere/Creatives/Camp1/caro1_card1.jpg",
+//                       },
+//                       mediaHeight: "MEDIUM",
+//                     },
+//                     suggestions: [
+//                       {
+//                         action: {
+//                           plainText: "Browse Now",
+//                           postBack: {
+//                             data: "SA1L1C1",
+//                           },
+//                           openUrl: {
+//                             url: "https://jiosphere.page.link/creative1",
+//                           },
+//                         },
+//                       },
+//                     ],
+//                   },
+//                   {
+//                     cardTitle: "Entertainment on tap",
+//                     cardDescription:
+//                       "Enjoy tailored content in your language across various topics",
+//                     cardMedia: {
+//                       contentInfo: {
+//                         fileUrl:
+//                           "https://jfxv.akamaized.net/JBMCampaigns/JioSphere/Creatives/Camp1/caro1_card2.jpg",
+//                       },
+//                       mediaHeight: "MEDIUM",
+//                     },
+//                     suggestions: [
+//                       {
+//                         action: {
+//                           plainText: "Download Now",
+//                           postBack: {
+//                             data: "SA2L1C2",
+//                           },
+//                           openUrl: {
+//                             url: "https://jiosphere.page.link/Creative2",
+//                           },
+//                         },
+//                       },
+//                     ],
+//                   },
+//                   {
+//                     cardTitle: "Your digital privacy matters",
+//                     cardDescription:
+//                       "Anti-tracking mode stops websites from tracking you",
+//                     cardMedia: {
+//                       contentInfo: {
+//                         fileUrl:
+//                           "https://jfxv.akamaized.net/JBMCampaigns/JioSphere/Creatives/Camp1/caro1_card3.jpg",
+//                       },
+//                       mediaHeight: "MEDIUM",
+//                     },
+//                     suggestions: [
+//                       {
+//                         action: {
+//                           plainText: "Browse Privately",
+//                           postBack: {
+//                             data: "SA3L1C3",
+//                           },
+//                           openUrl: {
+//                             url: "https://jiosphere.page.link/Creative3",
+//                           },
+//                         },
+//                       },
+//                     ],
+//                   },
+//                 ],
+//               },
+//             },
+//             suggestions: [
+//               {
+//                 reply: {
+//                   plainText: "Know More",
+//                   postBack: {
+//                     data: "SR1L1C0",
+//                   },
+//                 },
+//               },
+//             ],
+//           },
+//         };
+//         try {
+//           const resp = await axios.post(url, payload, {
+//             headers: {
+//               Authorization: `Bearer ${jioToken}`,
+//               "Content-Type": "application/json",
+//             },
+//           });
+
+//           results.push({
+//             phone: formattedPhone,
+//             status: resp.status,
+//           });
+//         } catch (err) {
+//           results.push({
+//             phone: formattedPhone,
+//             status: err.response?.status || 500,
+//             response: err.response?.data || err.message,
+//           });
+//         }
+//       } else if (type === "VERTICAL") {
+//         const payload = {
+//           content: {
+//             richCardDetails: {
+//               standalone: {
+//                 cardOrientation: "VERTICAL",
+//                 content: {
+//                   cardTitle: title,
+//                   cardDescription: subtitle,
+//                   cardMedia: {
+//                     mediaHeight: "TALL",
+//                     contentInfo: {
+//                       fileUrl: imageUrl,
+//                     },
+//                   },
+//                   suggestions: [
+//                     {
+//                       reply: {
+//                         plainText: "Suggestion #1",
+//                         postBack: {
+//                           data: "suggestion_1",
+//                         },
+//                       },
+//                     },
+//                     {
+//                       Action: {
+//                         plainText: "Call Us 📞",
+//                         postback: { data: "call_support" },
+//                         dialerAction: { phoneNumber: callUrl },
+//                       },
+//                     },
+//                   ],
+//                 },
+//               },
+//             },
+//           },
+//         };
+//         try {
+//           const resp = await axios.post(url, payload, {
+//             headers: {
+//               Authorization: `Bearer ${jioToken}`,
+//               "Content-Type": "application/json",
+//             },
+//           });
+
+//           results.push({
+//             phone: formattedPhone,
+//             status: resp.status,
+//           });
+//         } catch (err) {
+//           results.push({
+//             phone: formattedPhone,
+//             status: err.response?.status || 500,
+//             response: err.response?.data || err.message,
+//           });
+//         }
+//       } else if (type === "rcs") {
+//         const payload = {
+//           content: {
+//             richCardDetails: {
+//               standalone: {
+//                 cardOrientation: "VERTICAL",
+//                 content: {
+//                   cardTitle: "This is card title",
+//                   cardDescription: "This is card description",
+//                   cardMedia: {
+//                     mediaHeight: "TALL",
+//                     contentInfo: {
+//                       fileUrl:
+//                         "http://www.google.com/logos/doodles/2015/googles-new-logo-5078286822539264.3-hp2x.gif",
+//                     },
+//                   },
+//                   suggestions: [
+//                     {
+//                       reply: {
+//                         plainText: "Suggestion #1",
+//                         postBack: {
+//                           data: "suggestion_1",
+//                         },
+//                       },
+//                     },
+//                     {
+//                       reply: {
+//                         plainText: "Suggestion #2",
+//                         postBack: {
+//                           data: "suggestion_2",
+//                         },
+//                       },
+//                     },
+//                   ],
+//                 },
+//               },
+//             },
+//           },
+//         };
+//         try {
+//           const resp = await axios.post(url, payload, {
+//             headers: {
+//               Authorization: `Bearer ${jioToken}`,
+//               "Content-Type": "application/json",
+//             },
+//           });
+
+//           results.push({
+//             phone: formattedPhone,
+//             status: resp.status,
+//           });
+//         } catch (err) {
+//           results.push({
+//             phone: formattedPhone,
+//             status: err.response?.status || 500,
+//             response: err.response?.data || err.message,
+//           });
+//         }
+//       } else if (type === "interactive") {
+//         const payload = {};
+//         try {
+//           const resp = await axios.post(url, payload, {
+//             headers: {
+//               Authorization: `Bearer ${jioToken}`,
+//               "Content-Type": "application/json",
+//             },
+//           });
+
+//           results.push({
+//             phone: formattedPhone,
+//             status: resp.status,
+//           });
+//         } catch (err) {
+//           results.push({
+//             phone: formattedPhone,
+//             status: err.response?.status || 500,
+//             response: err.response?.data || err.message,
+//           });
+//         }
+//       } else if (type === "button") {
+//         const payload = {
+//           content: {
+//             plainText: "Visit this URL to find more about Jiosphere",
+//             suggestions: [
+//               {
+//                 action: {
+//                   plainText: "Browse Now",
+//                   postBack: {
+//                     data: "SA1L1C1",
+//                   },
+//                   openUrl: {
+//                     url: "https://medium.com/hprog99/mastering-generics-in-go-a-comprehensive-guide-4d05ec4b12b",
+//                     application: "WEBVIEW",
+//                     webviewViewMode: "TALL",
+//                     description: "its a link",
+//                   },
+//                 },
+//               },
+//             ],
+//           },
+//         };
+//         try {
+//           const resp = await axios.post(url, payload, {
+//             headers: {
+//               Authorization: `Bearer ${jioToken}`,
+//               "Content-Type": "application/json",
+//             },
+//           });
+
+//           results.push({
+//             phone: formattedPhone,
+//             status: resp.status,
+//           });
+//         } catch (err) {
+//           results.push({
+//             phone: formattedPhone,
+//             status: err.response?.status || 500,
+//             response: err.response?.data || err.message,
+//           });
+//         }
+//       } else {
+//         const payload = {};
+//         try {
+//           const resp = await axios.post(url, payload, {
+//             headers: {
+//               Authorization: `Bearer ${jioToken}`,
+//               "Content-Type": "application/json",
+//             },
+//           });
+
+//           results.push({
+//             phone: formattedPhone,
+//             status: resp.status,
+//           });
+//         } catch (err) {
+//           results.push({
+//             phone: formattedPhone,
+//             status: err.response?.status || 500,
+//             response: err.response?.data || err.message,
+//           });
+//         }
+//       }
+
+//       try {
+//         const resp = await axios.post(url, payload, {
+//           headers: {
+//             Authorization: `Bearer ${jioToken}`,
+//             "Content-Type": "application/json",
+//           },
+//         });
+
+//         results.push({
+//           phone: formattedPhone,
+//           status: resp.status,
+//         });
+//       } catch (err) {
+//         results.push({
+//           phone: formattedPhone,
+//           status: err.response?.status || 500,
+//           response: err.response?.data || err.message,
+//         });
+//       }
+//     })
+//   );
+
+//   return results;
+// };
+
+// const carasolmesage = async ({ phoneNumbers, jioToken ,}) => {
+//    try {
+//     // 🧹 Format phone number
+//     let formattedPhone = phoneNumber
+//       .toString()
+//       .trim()
+//       .replace(/[^0-9+]/g, "");
+//     if (!formattedPhone.startsWith("+91"))
+//       formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
+
+//     const messageId = `msg_${uuidv4()}`;
+//     const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
+
+//     // ✅ Official payload structure (from Jio docs)
+//     const payload = {
+//       botId: process.env.JIO_ASSISTANT_ID,
+//       content: content
+//     };
+
+//     const response = await axios.post(url, payload, {
+//       headers: {
+//         Authorization: `Bearer ${token}`,
+//         "Content-Type": "application/json",
+//       },
+//       timeout: 10000,
+//     });
+
+//     console.log("📩 Jio Response:", response);
+
+//     return {
+//       phone: formattedPhone,
+//       status: response.status,
+//       response: response.data,
+//       messageId,
+//       timestamp: new Date().toISOString(),
+//       result: "Message Sent Successfully",
+//       type: "text",
+//       statusText: response.statusText,
+//       _eventsCount:response.headers['x-events-count'] || null,
+//       _messageStatus:response.headers['x-message-status'] || null,
+
+//     };
+//   } catch (error) {
+//     console.error("❌ Jio API Error:", error.response?.data || error.message);
+//     return {
+//       phone: phoneNumber,
+//       status: error.response?.status || 500,
+//       response: { error: error.response?.data || error.message },
+//       error: true,
+//       timestamp: new Date().toISOString(),
+//     };
+//   }
+// }
+
+// --- Controller Object ---
+const UserController = {
+  registerUser: async (req, res) => {
+    try {
+      const { name, email, password, phone } = req.body;
+      if (!name || !email || !password || !phone)
+        return res.status(400).send({ message: "All fields are required" });
+
+      const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+      if (existingUser)
+        return res
+          .status(400)
+          .send({ message: "Email or Phone already exists" });
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        phone,
+      });
+
+      res.status(201).send({
+        message: "User registered successfully",
+        user: newUser,
+      });
+    } catch (err) {
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  loginUser: async (req, res) => {
+    try {
+      const { emailorphone, password } = req.body;
+      if (!emailorphone || !password)
+        return res
+          .status(400)
+          .send({ message: "Email/Phone and password required" });
+
+      const query = /^\d+$/.test(emailorphone)
+        ? { phone: Number(emailorphone) }
+        : { email: emailorphone.toLowerCase() };
+
+      const user = await User.findOne(query);
+      if (!user)
+        return res
+          .status(400)
+          .send({ message: "Invalid email or phone number" });
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid)
+        return res.status(400).send({ message: "Invalid password" });
+
+      const jioToken = await fetchJioToken();
+      res.status(200).send({
+        message: "Login successful",
+        user,
+        jio_token: jioToken,
+      });
+    } catch (err) {
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  // sendNormalSms: async (req, res) => {
+  //   try {
+  //     const { title, phoneNumbers, tableName, campaignName } = req.body;
+  //     if (!title || !Array.isArray(phoneNumbers))
+  //       return res
+  //         .status(400)
+  //         .send({ message: "Title and phoneNumbers required" });
+
+  //     const token = await fetchJioToken();
+  //     const results = await Promise.all(
+  //       phoneNumbers.map((phone) =>
+  //         sendJioSms(phone, title, token, tableName, campaignName)
+  //       )
+  //     );
+
+  //     res.status(200).send({ message: "SMS sending completed", results });
+  //   } catch (err) {
+  //     res
+  //       .status(500)
+  //       .send({ message: "Internal server error", error: err.message });
+  //   }
+  // },
+
+  sendMessage: async (req, res) => {
+    try {
+      const { type, content, phoneNumbers, userId } = req.body;
+      
+      if (!type || !content || !phoneNumbers || !userId) {
+        return res.status(400).send({ success: false, message: "Missing required fields" });
+      }
+      
+      // Check user wallet balance
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      const phoneCount = phoneNumbers.length;
+      const costPerPhone = 1; // ₹1 per phone number
+      const totalCost = phoneCount * costPerPhone;
+      
+      if (user.Wallet < totalCost) {
+        return res.status(400).send({ 
+          success: false, 
+          message: "Insufficient balance",
+          required: totalCost,
+          available: user.Wallet
+        });
+      }
+      
+      const token = await fetchJioToken();
+      if (type === "text") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        // Deduct wallet balance
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+        const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "Text message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      } else if (type === "carousel") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+        const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "Text message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      } else if (type === "text-with-action") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+         const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "Text message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      } else if (type === "rcs") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+        const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "RCS message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      } else if (type === "suggestion") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+        const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "Suggestion message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      } else if (type === "webview") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+        const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "Webview message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      } else if (type === "dialer-action") {
+        let results = await Promise.all(
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+        );
+        
+        await User.findByIdAndUpdate(userId, {
+          $inc: { Wallet: -totalCost }
+        });
+        
+        const messageData = new Message({
+          type,
+          content,
+          phoneNumbers,
+          results,
+          userId,
+          cost: totalCost
+        });
+        await messageData.save();
+        
+        return res.status(200).send({ 
+          success: true,
+          message: "Dialer action message sent", 
+          data: messageData,
+          results,
+          walletDeducted: totalCost
+        });
+      }
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  checkAvablityNumber: async (req, res) => {
+    try {
+      const { phoneNumbers } = req.body;
+      if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0)
+        return res.status(400).send({ success: false, message: "phoneNumbers array required" });
+
+      const jioToken = await fetchJioToken();
+      const results = {};
+      for (const phone of phoneNumbers) {
+        results[phone] = await checkRcsCapability(phone, jioToken);
+      }
+
+      res.status(200).send({ success: true, rcsMessaging: results });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  uploadImage: async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).send({ success: false, message: "No image file provided" });
+      }
+
+      let result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "rcs",
+      })
+
+      res.status(200).send({
+        success: true,
+        message: "Image uploaded successfully",
+        url: result.secure_url,
+        public_id: result.public_id
+      });
+    } catch (err) {
+      res.status(500).send({
+        success: false,
+        message: "Image upload failed",
+        error: err.message
+      });
+    }
+  },
+
+  requestWalletRecharge: async (req, res) => {
+    try {
+      const { amount, userId } = req.body;
+      if (!amount || !userId) {
+        return res.status(400).send({ success: false, message: "Amount and userId required" });
+      }
+      
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+
+      const walletRequest = new WalletRequest({
+        userId,
+        amount,
+      });
+
+      await walletRequest.save();
+      res.status(201).send({
+        success: true,
+        message: "Wallet recharge request submitted",
+        data: walletRequest,
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getAllUsers: async (req, res) => {
+    try {
+      const users = await User.find({}, "-password");
+      res.status(200).send({ success: true, users });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getWalletRequests: async (req, res) => {
+    try {
+      const requests = await WalletRequest.find()
+        .populate("userId", "name email phone")
+        .populate("processedBy", "name email")
+        .sort({ requestedAt: -1 });
+      res.status(200).send({ success: true, requests });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  approveWalletRequest: async (req, res) => {
+    try {
+      const { requestId, adminId, note } = req.body;
+      
+      if (!requestId || !adminId) {
+        return res.status(400).send({ success: false, message: "Missing required fields" });
+      }
+      
+      const request = await WalletRequest.findById(requestId);
+      if (!request) {
+        return res.status(404).send({ success: false, message: "Request not found" });
+      }
+
+      if (request.status !== "pending") {
+        return res.status(400).send({ success: false, message: "Request already processed" });
+      }
+
+      await User.findByIdAndUpdate(request.userId, {
+        $inc: { Wallet: request.amount }
+      });
+
+      request.status = "approved";
+      request.processedAt = new Date();
+      request.processedBy = adminId;
+      request.note = note;
+      await request.save();
+
+      res.status(200).send({
+        success: true,
+        message: "Wallet request approved",
+        data: request,
+      });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  rejectWalletRequest: async (req, res) => {
+    try {
+      const { requestId, adminId, note } = req.body;
+      
+      const request = await WalletRequest.findById(requestId);
+      if (!request) {
+        return res.status(404).send({ message: "Request not found" });
+      }
+
+      if (request.status !== "pending") {
+        return res.status(400).send({ message: "Request already processed" });
+      }
+
+      request.status = "rejected";
+      request.processedAt = new Date();
+      request.processedBy = adminId;
+      request.note = note;
+      await request.save();
+
+      res.status(200).send({
+        success: true,
+        message: "Wallet request rejected",
+        data: request,
+      });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  createUser: async (req, res) => {
+    try {
+      const { name, email, password, phone, role } = req.body;
+      if (!name || !email || !password || !phone) {
+        return res.status(400).send({ message: "All fields are required" });
+      }
+
+      const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+      if (existingUser) {
+        return res.status(400).send({ message: "Email or Phone already exists" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        phone,
+        role: role || "user",
+      });
+
+      res.status(201).send({
+        success: true,
+        message: "User created successfully",
+        user: { ...newUser.toObject(), password: undefined },
+      });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserProfile: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await User.findById(userId, "-password");
+      if (!user) {
+        return res.status(404).send({ message: "User not found" });
+      }
+      res.status(200).send({ success: true, user });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserMessages: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const messages = await Message.find({ userId }).sort({ createdAt: -1 });
+      res.status(200).send({ success: true, messages });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+};
+
+export default UserController;

@@ -1,0 +1,30 @@
+import  exxpress  from "express";
+import UserController from "./UserController.js";
+import upload from "../middleware/multerConfig.js";
+import { adminOnly } from "../middleware/roleCheck.js";
+
+const userRouter = exxpress.Router();
+
+userRouter.post("/register", UserController.registerUser);
+userRouter.post("/login", UserController.loginUser);
+userRouter.post("/sendMessage", UserController.sendMessage);
+userRouter.post("/checkAvablityNumber",UserController.checkAvablityNumber);
+userRouter.post("/uploadFile", upload.single('file'), UserController.uploadImage);
+
+// User Profile API
+userRouter.get("/profile/:userId", UserController.getUserProfile);
+userRouter.get("/messages/:userId", UserController.getUserMessages);
+
+// Wallet APIs
+userRouter.post("/wallet/request", UserController.requestWalletRecharge);
+
+// Admin APIs (Protected)
+userRouter.get("/admin/users", UserController.getAllUsers);
+userRouter.get("/admin/wallet-requests", UserController.getWalletRequests);
+userRouter.post("/admin/wallet/approve", UserController.approveWalletRequest);
+userRouter.post("/admin/wallet/reject", UserController.rejectWalletRequest);
+userRouter.post("/admin/create-user", UserController.createUser);
+
+
+
+export default userRouter;
