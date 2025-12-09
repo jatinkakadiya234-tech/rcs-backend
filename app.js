@@ -14,7 +14,7 @@ app.use(cors());
 
 
 // JSON parsing for routes (excluding file upload)
-app.use("/api/user", (req, res, next) => {
+app.use("/api/v1/user", (req, res, next) => {
   if (req.path === "/uploadFile") {
     return next();
   }
@@ -24,9 +24,9 @@ app.use("/api/user", (req, res, next) => {
 app.use(expess.urlencoded({ extended: true, limit: "50mb" }));
 app.use(expess.json({ limit: "50mb" }));
 
-app.use("/api/user", userRouter);
-app.use("/api/templates", TemplateRoute);
-app.use("/api/message-reports", MessageApiRoute);
+app.use("/api/v1/user", userRouter);
+app.use("/api/v1/templates", TemplateRoute);
+app.use("/api/v1/message-reports", MessageApiRoute);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
