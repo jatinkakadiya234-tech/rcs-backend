@@ -1,7 +1,6 @@
 import  exxpress  from "express";
 import UserController from "./UserController.js";
 import upload from "../middleware/multerConfig.js";
-import { adminOnly } from "../middleware/roleCheck.js";
 
 const userRouter = exxpress.Router();
 
