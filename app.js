@@ -11,6 +11,11 @@ const app = expess();
 ConnectDB()
 app.use(cors());
 
+app.use('/', (req, res) => {
+  res.send('👍  API is running....');
+});
+
+
 // JSON parsing for routes (excluding file upload)
 app.use('/api/user', (req, res, next) => {
   if (req.path === '/uploadFile') {
