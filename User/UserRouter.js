@@ -6,6 +6,7 @@ const userRouter = exxpress.Router();
 
 userRouter.post("/register", UserController.registerUser);
 userRouter.post("/login", UserController.loginUser);
+userRouter.post("/logout", UserController.logoutUser);
 userRouter.post("/sendMessage", UserController.sendMessage);
 userRouter.post("/checkAvablityNumber",UserController.checkAvablityNumber);
 userRouter.post("/uploadFile", upload.single('file'), UserController.uploadImage);
@@ -23,6 +24,7 @@ userRouter.get("/admin/wallet-requests", UserController.getWalletRequests);
 userRouter.post("/admin/wallet/approve", UserController.approveWalletRequest);
 userRouter.post("/admin/wallet/reject", UserController.rejectWalletRequest);
 userRouter.post("/admin/create-user", UserController.createUser);
+userRouter.get("/admin/user-reports/:userId", UserController.getUserReports);
 
 
 

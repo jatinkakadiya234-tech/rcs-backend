@@ -1,15 +1,21 @@
 import expess from "express";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 import ConnectDB from "./config/Db.js";
 import userRouter from "./User/UserRouter.js";
 import cors from "cors";
 import TemplateRoute from "./Tamplete/TampleteRoute.js";
 import MessageApiRoute from "./Message/MessageRoute.js";
+import { findjioId } from "./middleware/roleCheck.js";
 dotenv.config();
 
 const app = expess();
 ConnectDB();
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
+app.use(cookieParser());
 
 
 

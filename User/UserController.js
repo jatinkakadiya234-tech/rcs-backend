@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import axios from "axios";
+import jwt from "jsonwebtoken";
 import User from "./UserModel.js";
 import WalletRequest from "./WalletRequestModel.js";
 import * as uuid from "uuid";
@@ -13,12 +14,17 @@ dotenv.config();
 let cachedJioToken = null;
 let tokenExpiry = null;
 
-// --- Fetch Jio OAuth Token with caching ---
-const fetchJioToken = async () => {
+// --- Fetch Jio OAuth Token with user credentials ---
+const fetchJioToken = async (userId) => {
   const now = Date.now();
   if (cachedJioToken && tokenExpiry && now < tokenExpiry) return cachedJioToken;
+ 
+  const user = await User.findById(userId);
+  if (!user || !user.jioId || !user.jioSecret) {
+    throw new Error('Jio credentials not found in user profile');
+  }
 
-  const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${process.env.JIO_CLIENT_ID}&client_secret=${process.env.JIO_CLIENT_SECRET}&scope=read`;
+  const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${user.jioId}&client_secret=${user.jioSecret}&scope=read`;
 
   const response = await axios.get(tokenUrl);
   const newToken = response.data.access_token;
@@ -617,11 +623,43 @@ const UserController = {
       if (!isPasswordValid)
         return res.status(400).send({ message: "Invalid password" });
 
-      const jioToken = await fetchJioToken();
+      // Generate JWT token
+      const token = jwt.sign(
+        { 
+          userId: user._id, 
+          email: user.email, 
+          role: user.role 
+        },
+        process.env.JWT_SECRET || "your-secret-key",
+        { expiresIn: "1d" }
+      );
+
+      // Set cookies with 1 day expiry
+      res.cookie("jio_token", token, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 1 * 24 * 60 * 60 * 1000 // 1 day
+      });
+
+      res.cookie("user_data", JSON.stringify({ ...user.toObject(), password: undefined }), {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 1 * 24 * 60 * 60 * 1000 // 1 day
+      });
+
+      res.cookie("login_time", new Date().getTime().toString(), {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 1 * 24 * 60 * 60 * 1000 // 1 day
+      });
+
       res.status(200).send({
         message: "Login successful",
-        user,
-        jio_token: jioToken,
+        user: { ...user.toObject(), password: undefined },
+        token,
       });
     } catch (err) {
       res
@@ -679,8 +717,8 @@ const UserController = {
           available: user.Wallet
         });
       }
-      
-      const token = await fetchJioToken();
+    
+      const token = await fetchJioToken(userId);
       if (type === "text") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
@@ -872,11 +910,14 @@ const UserController = {
 
   checkAvablityNumber: async (req, res) => {
     try {
-      const { phoneNumbers } = req.body;
+      const { phoneNumbers  } = req.body;
       if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0)
         return res.status(400).send({ success: false, message: "phoneNumbers array required" });
 
-      const jioToken = await fetchJioToken();
+      // Get userId from request (you'll need to add auth middleware)
+      const { userId } = req.body; // or get from auth middleware
+      console.log("userId:", userId);
+      const jioToken = await fetchJioToken(userId);
       const results = {};
       for (const phone of phoneNumbers) {
         results[phone] = await checkRcsCapability(phone, jioToken);
@@ -1030,7 +1071,7 @@ const UserController = {
 
   createUser: async (req, res) => {
     try {
-      const { name, email, password, phone, role } = req.body;
+      const { name, email, password, phone, role , jioId, jioSecret } = req.body;
       if (!name || !email || !password || !phone) {
         return res.status(400).send({ message: "All fields are required" });
       }
@@ -1047,6 +1088,8 @@ const UserController = {
         password: hashedPassword,
         phone,
         role: role || "user",
+        jioId,
+        jioSecret
       });
 
       res.status(201).send({
@@ -1077,6 +1120,44 @@ const UserController = {
       const { userId } = req.params;
       const messages = await Message.find({ userId }).sort({ createdAt: -1 });
       res.status(200).send({ success: true, messages });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  logoutUser: async (req, res) => {
+    try {
+      res.clearCookie("jio_token");
+      res.clearCookie("user_data");
+      res.clearCookie("login_time");
+      res.status(200).send({
+        success: true,
+        message: "Logout successful"
+      });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserReports: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const messages = await Message.find({ userId }).sort({ createdAt: -1 });
+      
+      const stats = {
+        totalMessages: messages.length,
+        successfulMessages: messages.filter(m => m.results?.some(r => r.status === 200 || r.status === 201)).length,
+        failedMessages: messages.filter(m => m.results?.some(r => r.error)).length,
+        messagesByType: messages.reduce((acc, msg) => {
+          const existing = acc.find(item => item._id === msg.type);
+          if (existing) existing.count++;
+          else acc.push({ _id: msg.type, count: 1 });
+          return acc;
+        }, []),
+        recentMessages: messages.slice(0, 10)
+      };
+      
+      res.status(200).send({ success: true, stats, messages });
     } catch (err) {
       res.status(500).send({ message: "Internal server error", error: err.message });
     }

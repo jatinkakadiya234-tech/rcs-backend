@@ -1,3 +1,4 @@
+import e from "express";
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
@@ -32,6 +33,21 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  jioId:{
+    type:String,
+    default:null
+  },
+  jioSecret:{
+    type:String,
+    default:null
+  },
+  status:{
+    type:String,
+    enum: ["active", "inactive"],
+    default: "active"
+
+  }
+  
 
 });
 
