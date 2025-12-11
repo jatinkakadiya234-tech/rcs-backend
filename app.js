@@ -37,7 +37,7 @@ app.use(expess.json({ limit: "100mb" }));
 
 
 
-app.use("/api/v1/user", userRouter);
+app.use("/api", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
 
