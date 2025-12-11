@@ -604,7 +604,11 @@ const UserController = {
   loginUser: async (req, res) => {
     try {
       const { emailorphone, password } = req.body;
+
+      console.log(emailorphone, password , '--------req.body---------------------');
+
       console.log("user ....................");
+
       if (!emailorphone || !password)
         return res
           .status(400)

@@ -27,15 +27,22 @@ app.use("/api/v1/user", (req, res, next) => {
   expess.json({ limit: "50mb" })(req, res, next);
 });
 
-app.use(expess.urlencoded({ extended: true, limit: "50mb" }));
-app.use(expess.json({ limit: "50mb" }));
+app.use(expess.urlencoded({ extended: true, limit: "100mb" }));
+
+
+app.use(expess.json({ limit: "100mb" }));
  app.get("/api/v1",(req,res)=>{
   res.send("API is running...");
  });
-app.use("/v1/user", userRouter);
+
+
+
+app.use("/api/v1/user", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
-const PORT = process.env.PORT || 3000;
+
+const PORT = process.env.PORT || 8888;
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
