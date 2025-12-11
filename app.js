@@ -29,7 +29,9 @@ app.use("/api/v1/user", (req, res, next) => {
 
 app.use(expess.urlencoded({ extended: true, limit: "50mb" }));
 app.use(expess.json({ limit: "50mb" }));
-
+ app.get("/api/v1",(req,res)=>{
+  res.send("API is running...");
+ });
 app.use("/api/v1/user", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
