@@ -32,7 +32,7 @@ app.use(expess.json({ limit: "50mb" }));
  app.get("/api/v1",(req,res)=>{
   res.send("API is running...");
  });
-app.use("/api/v1/user", userRouter);
+app.use("/v1/user", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
 const PORT = process.env.PORT || 3000;
