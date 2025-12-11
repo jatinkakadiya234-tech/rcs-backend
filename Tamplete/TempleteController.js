@@ -70,3 +70,14 @@ export const deleteTemplate = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// 📌 Get Templates for Particular User
+export const getUserTemplates = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const templates = await Template.find({ userId }).sort({ createdAt: -1 });
+    res.json({ success: true, data: templates });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

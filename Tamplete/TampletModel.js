@@ -31,6 +31,7 @@ const RichCardSchema = new mongoose.Schema({
 // ================ MAIN TEMPLATE ====================
 const TemplateSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   language: { type: String, default: "en" },
 
   messageType: {

@@ -693,9 +693,9 @@ const UserController = {
 
   sendMessage: async (req, res) => {
     try {
-      const { type, content, phoneNumbers, userId } = req.body;
+      const { type, content, phoneNumbers, userId, campaignName } = req.body;
       
-      if (!type || !content || !phoneNumbers || !userId) {
+      if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res.status(400).send({ success: false, message: "Missing required fields" });
       }
       
@@ -735,7 +735,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -761,7 +762,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -787,7 +789,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -813,7 +816,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -839,7 +843,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -865,7 +870,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -891,7 +897,8 @@ const UserController = {
           phoneNumbers,
           results,
           userId,
-          cost: totalCost
+          cost: totalCost,
+          CampaignName: campaignName
         });
         await messageData.save();
         
@@ -1158,6 +1165,28 @@ const UserController = {
       };
       
       res.status(200).send({ success: true, stats, messages });
+    } catch (err) {
+      res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  getTodayMessages: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const messages = await Message.find({ 
+        userId,
+        createdAt: {
+          $gte: today,
+          $lt: tomorrow
+        }
+      }).sort({ createdAt: -1 });
+      
+      res.status(200).send({ success: true, messages });
     } catch (err) {
       res.status(500).send({ message: "Internal server error", error: err.message });
     }

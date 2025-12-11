@@ -3,7 +3,8 @@ import Message from "./MessageModel.js";
 const MessageController = {
   getAllMessages: async (req, res) => {
     try {
-      const messages = await Message.find().sort({ createdAt: -1 });
+      const { id } = req.params;
+      const messages = await Message.find({ userId: id }).sort({ createdAt: -1 });
       res.status(200).send({
         success: true,
         data: messages
@@ -46,13 +47,78 @@ const MessageController = {
           successfulMessages,
           failedMessages,
           messagesByType,
-          recentMessages: messages.slice(0, 10)
+          recentMessages: messages.slice(0, 10),
+          campaignName:messages.map(m=>m.CampaignName)
+          
         }
       });
     } catch (err) {
       res.status(500).send({
         success: false,
         message: "Failed to fetch message reports",
+        error: err.message
+      });
+    }
+  },
+
+  getRecentOrders: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const recentOrders = await Message.find({ 
+        userId,
+        createdAt: { $gte: today }
+      })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .select('type content phoneNumbers status cost results createdAt');
+
+      
+      const ordersWithCounts = recentOrders.map(order => ({
+        ...order.toObject(),
+        successCount: order.results?.filter(r => r.status === 201).length || 0,
+        failedCount: order.results?.filter(r => r.status === 400 || r.status === 404).length || 0
+      }));
+      
+      res.status(200).send({
+        success: true,
+        data: ordersWithCounts,
+      });
+    } catch (err) {
+      res.status(500).send({
+        success: false,
+        message: "Failed to fetch recent orders",
+        error: err.message
+      });
+    }
+  },
+
+  getUserMessageStats: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const messages = await Message.find({ userId });
+      
+      const totalMessages = messages.length;
+      const failedMessages = messages.filter(m => m.status === "failed" || m.failedCount > 0).length;
+      const pendingMessages = messages.filter(m => m.status === "pending").length;
+      const sentMessages = messages.filter(m => m.status === "sent" || m.successCount > 0).length;
+      
+      
+      res.status(200).send({
+        success: true,
+        data: {
+          totalMessages,
+          failedMessages,
+          pendingMessages,
+          sentMessages
+        }
+      });
+    } catch (err) {
+      res.status(500).send({
+        success: false,
+        message: "Failed to fetch user message stats",
         error: err.message
       });
     }

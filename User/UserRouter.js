@@ -14,6 +14,7 @@ userRouter.post("/uploadFile", upload.single('file'), UserController.uploadImage
 // User Profile API
 userRouter.get("/profile/:userId", UserController.getUserProfile);
 userRouter.get("/messages/:userId", UserController.getUserMessages);
+userRouter.get("/messages/today/:userId", UserController.getTodayMessages);
 
 // Wallet APIs
 userRouter.post("/wallet/request", UserController.requestWalletRecharge);

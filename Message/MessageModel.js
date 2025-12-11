@@ -6,6 +6,7 @@ const MessageSchema = new mongoose.Schema({
     enum: ["text", "carousel", "text-with-action", "rcs", "webview", "dialer-action"],
     required: true
   },
+  CampaignName: { type: String, required: true },
   content: { type: mongoose.Schema.Types.Mixed, required: true },
   phoneNumbers: [{ type: String, required: true }],
   status: { type: String, default: "sent" },
