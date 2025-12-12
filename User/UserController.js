@@ -1016,7 +1016,8 @@ const UserController = {
 
   approveWalletRequest: async (req, res) => {
     try {
-      const { requestId, adminId, note } = req.body;
+      const { requestId, adminId, note } = req.body
+      console.log(req.body);;
       
       if (!requestId || !adminId) {
         return res.status(400).send({ success: false, message: "Missing required fields" });

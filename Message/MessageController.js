@@ -1,5 +1,5 @@
 import Message from "./MessageModel.js";
-
+import Template from "../Tamplete/TampletModel.js"
 const MessageController = {
   getAllMessages: async (req, res) => {
     try {
@@ -98,13 +98,16 @@ const MessageController = {
   getUserMessageStats: async (req, res) => {
     try {
       const { userId } = req.params;
+      console.log(userId);
       const messages = await Message.find({ userId });
       
       const totalMessages = messages.length;
       const failedMessages = messages.filter(m => m.status === "failed" || m.failedCount > 0).length;
       const pendingMessages = messages.filter(m => m.status === "pending").length;
       const sentMessages = messages.filter(m => m.status === "sent" || m.successCount > 0).length;
-      
+      let sendtoteltemplet = await  (await Template.find({userId:userId})).length
+    
+
       
       res.status(200).send({
         success: true,
@@ -112,7 +115,8 @@ const MessageController = {
           totalMessages,
           failedMessages,
           pendingMessages,
-          sentMessages
+          sentMessages,
+          sendtoteltemplet
         }
       });
     } catch (err) {
