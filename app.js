@@ -6,6 +6,7 @@ import userRouter from "./User/UserRouter.js";
 import cors from "cors";
 import TemplateRoute from "./Tamplete/TampleteRoute.js";
 import MessageApiRoute from "./Message/MessageRoute.js";
+import TransactionRoute from "./Transaction/TransactionRoute.js";
 import { findjioId } from "./middleware/roleCheck.js";
 dotenv.config();
 
@@ -16,21 +17,16 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
-
-
+app.use(expess.json({ limit: "100mb" }));
+app.use(expess.urlencoded({ extended: true, limit: "100mb" }));
 
 // JSON parsing for routes (excluding file upload)
-app.use("/api/v1/user", (req, res, next) => {
+app.use("/api", (req, res, next) => {
   if (req.path === "/uploadFile") {
     return next();
   }
-  expess.json({ limit: "50mb" })(req, res, next);
+  next();
 });
-
-app.use(expess.urlencoded({ extended: true, limit: "100mb" }));
-
-
-app.use(expess.json({ limit: "100mb" }));
  app.get("/api/v1",(req,res)=>{
   res.send("API is running...");
  });
@@ -40,6 +36,7 @@ app.use(expess.json({ limit: "100mb" }));
 app.use("/api", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
+app.use("/api/v1/transactions", TransactionRoute);
 
 const PORT = process.env.PORT || 8888;
 

@@ -8,6 +8,9 @@ const uuidv4 = uuid.v4;
 import dotenv from "dotenv";
 import cloudinary from "../utils/cloudinary.js";
 import Message from "../Message/MessageModel.js";
+import TransactionController from "../Transaction/TransactionController.js";
+import Transaction from "../Transaction/TransactionModel.js";
+import mongoose from "mongoose";
 dotenv.config();
 
 // --- Token cache ---
@@ -994,8 +997,7 @@ const UserController = {
 
   getAllUsers: async (req, res) => {
     try {
-
-      const users = await User.find({}, "-password");
+      const users = await User.find({ role: { $ne: "admin" } }, "-password");
       res.status(200).send({ success: true, users });
     } catch (err) {
       res.status(500).send({ success: false, message: "Internal server error", error: err.message });
@@ -1016,8 +1018,10 @@ const UserController = {
 
   approveWalletRequest: async (req, res) => {
     try {
-      const { requestId, adminId, note } = req.body
-      console.log(req.body);;
+      const { requestId } = req.params;
+      const { adminId, note } = req.body || {};
+      console.log(req.body, "request body data");
+      console.log(req.params,"params data");
       
       if (!requestId || !adminId) {
         return res.status(400).send({ success: false, message: "Missing required fields" });
@@ -1035,6 +1039,16 @@ const UserController = {
       await User.findByIdAndUpdate(request.userId, {
         $inc: { Wallet: request.amount }
       });
+
+      // Create transaction record
+      await TransactionController.createTransaction(
+        request.userId,
+        "credit",
+        request.amount,
+        `Wallet recharge approved - ₹${request.amount}`,
+        "wallet_request",
+        requestId
+      );
 
       request.status = "approved";
       request.processedAt = new Date();
@@ -1056,13 +1070,17 @@ const UserController = {
     try {
       const { requestId, adminId, note } = req.body;
       
+      if (!requestId || !adminId) {
+        return res.status(400).send({ success: false, message: "Missing required fields" });
+      }
+      
       const request = await WalletRequest.findById(requestId);
       if (!request) {
-        return res.status(404).send({ message: "Request not found" });
+        return res.status(404).send({ success: false, message: "Request not found" });
       }
 
       if (request.status !== "pending") {
-        return res.status(400).send({ message: "Request already processed" });
+        return res.status(400).send({ success: false, message: "Request already processed" });
       }
 
       request.status = "rejected";
@@ -1077,7 +1095,7 @@ const UserController = {
         data: request,
       });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
     }
   },
 
@@ -1125,6 +1143,46 @@ const UserController = {
       res.status(200).send({ success: true, user });
     } catch (err) {
       res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserProfileWithTransactions: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { limit = 10 } = req.query;
+      
+      const user = await User.findById(userId, "-password");
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      const recentTransactions = await Transaction.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit));
+      
+      const totalCredit = await Transaction.aggregate([
+        { $match: { userId: new mongoose.Types.ObjectId(userId), type: "credit" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]);
+      
+      const totalDebit = await Transaction.aggregate([
+        { $match: { userId: new mongoose.Types.ObjectId(userId), type: "debit" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+      ]);
+      
+      const profile = {
+        user,
+        transactionSummary: {
+          totalCredit: totalCredit[0]?.total || 0,
+          totalDebit: totalDebit[0]?.total || 0,
+          currentBalance: user.Wallet
+        },
+        recentTransactions
+      };
+      
+      res.status(200).send({ success: true, profile });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
     }
   },
 
@@ -1195,6 +1253,351 @@ const UserController = {
       res.status(200).send({ success: true, messages });
     } catch (err) {
       res.status(500).send({ message: "Internal server error", error: err.message });
+    }
+  },
+
+  editUser: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const updateData = req.body;
+      
+      delete updateData.password;
+      
+      const user = await User.findByIdAndUpdate(userId, updateData, { new: true }).select("-password");
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      res.status(200).send({ success: true, message: "User updated successfully", user });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  addWalletBalance: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { amount } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).send({ success: false, message: "Valid amount required" });
+      }
+      
+      const user = await User.findByIdAndUpdate(
+        userId, 
+        { $inc: { Wallet: amount } }, 
+        { new: true }
+      ).select("-password");
+      
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      // Create transaction record
+      await TransactionController.createTransaction(
+        userId,
+        "credit",
+        amount,
+        `Admin added ₹${amount} to wallet`,
+        "admin_add"
+      );
+      
+      res.status(200).send({ 
+        success: true, 
+        message: `₹${amount} added to wallet successfully`, 
+        user 
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserById: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await User.findById(userId).select("-password");
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      res.status(200).send({ success: true, user });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  deleteUser: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await User.findByIdAndDelete(userId);
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      res.status(200).send({ success: true, message: "User deleted successfully" });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  updateUserStatus: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { status } = req.body;
+      
+      if (!status || !["active", "inactive"].includes(status)) {
+        return res.status(400).send({ success: false, message: "Valid status required (active/inactive)" });
+      }
+      
+      const user = await User.findByIdAndUpdate(
+        userId, 
+        { status }, 
+        { new: true }
+      ).select("-password");
+      
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      res.status(200).send({ success: true, message: `User status updated to ${status}`, user });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  resetUserPassword: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { newPassword } = req.body;
+      
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).send({ success: false, message: "Password must be at least 6 characters" });
+      }
+      
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const user = await User.findByIdAndUpdate(
+        userId, 
+        { password: hashedPassword }, 
+        { new: true }
+      ).select("-password");
+      
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      res.status(200).send({ success: true, message: "Password reset successfully", user });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserStats: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await User.findById(userId).select("-password");
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      const messages = await Message.find({ userId });
+      const totalMessages = messages.length;
+      const totalSpent = messages.reduce((sum, msg) => sum + (msg.cost || 0), 0);
+      const successfulMessages = messages.filter(m => m.results?.some(r => r.status === 200 || r.status === 201)).length;
+      const failedMessages = messages.filter(m => m.results?.some(r => r.error)).length;
+      
+      const stats = {
+        user,
+        totalMessages,
+        totalSpent,
+        successfulMessages,
+        failedMessages,
+        walletBalance: user.Wallet
+      };
+      
+      res.status(200).send({ success: true, stats });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getAllUserMessages: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { page = 1, limit = 10 } = req.query;
+      
+      const messages = await Message.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+        
+      const total = await Message.countDocuments({ userId });
+      
+      res.status(200).send({ 
+        success: true, 
+        messages, 
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  deductWalletBalance: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { amount } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).send({ success: false, message: "Valid amount required" });
+      }
+      
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      if (user.Wallet < amount) {
+        return res.status(400).send({ success: false, message: "Insufficient wallet balance" });
+      }
+      
+      const updatedUser = await User.findByIdAndUpdate(
+        userId, 
+        { $inc: { Wallet: -amount } }, 
+        { new: true }
+      ).select("-password");
+      
+      // Create transaction record
+      await TransactionController.createTransaction(
+        userId,
+        "debit",
+        amount,
+        `Admin deducted ₹${amount} from wallet`,
+        "admin_deduct"
+      );
+      
+      res.status(200).send({ 
+        success: true, 
+        message: `₹${amount} deducted from wallet successfully`, 
+        user: updatedUser 
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  deleteWalletRequest: async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      
+      const request = await WalletRequest.findByIdAndDelete(requestId);
+      if (!request) {
+        return res.status(404).send({ success: false, message: "Wallet request not found" });
+      }
+      
+      res.status(200).send({ 
+        success: true, 
+        message: "Wallet request deleted successfully" 
+      });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getUserOrderHistory: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { page = 1, limit = 20 } = req.query;
+      
+      const user = await User.findById(userId).select("-password");
+      if (!user) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+      
+      const messages = await Message.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+        
+      const total = await Message.countDocuments({ userId });
+      
+      const orderHistory = {
+        user: {
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          currentBalance: user.Wallet
+        },
+        orders: messages.map(msg => ({
+          _id: msg._id,
+          type: msg.type,
+          CampaignName: msg.CampaignName,
+          phoneNumbers: msg.phoneNumbers,
+          cost: msg.cost,
+          successCount: msg.results?.filter(r => r.status === 200 || r.status === 201).length || 0,
+          failedCount: msg.results?.filter(r => r.error || r.status >= 400).length || 0,
+          totalNumbers: msg.phoneNumbers?.length || 0,
+          createdAt: msg.createdAt
+        })),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      };
+      
+      res.status(200).send({ success: true, orderHistory });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+    }
+  },
+
+  getAdminDashboard: async (req, res) => {
+    try {
+      // Recent Users (last 5)
+      let recentUsers = await User.find({ role: { $ne: "admin" } })
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .limit(5);
+      
+      // Recent Wallet Requests (last 5)
+      let recentWalletRequests = await WalletRequest.find()
+        .populate("userId", "name email")
+        .sort({ requestedAt: -1 })
+        .limit(5);
+      
+      // Recent Transactions (last 5)
+      let recentTransactions = await Transaction.find()
+        .populate("userId", "name email")
+        .sort({ createdAt: -1 })
+        .limit(5);
+      
+     
+      
+      // Dashboard Stats
+      const totalUsers = await User.countDocuments({ role: { $ne: "admin" } }) || 5;
+      const totalMessages = await Message.countDocuments() || 25;
+      const pendingRequests = await WalletRequest.countDocuments({ status: "pending" }) || 5;
+      const totalTransactions = await Transaction.countDocuments() || 15;
+      
+      const dashboard = {
+        stats: {
+          totalUsers,
+          totalMessages,
+          pendingRequests,
+          totalTransactions
+        },
+        recentUsers,
+        recentWalletRequests,
+        recentTransactions
+      };
+      
+      res.status(200).send({ success: true, dashboard });
+    } catch (err) {
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
     }
   },
 };

@@ -23,10 +23,7 @@ const walletRequestSchema = new mongoose.Schema({
   processedAt: {
     type: Date,
   },
-  processedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  },
+  processedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   note: {
     type: String,
   },
