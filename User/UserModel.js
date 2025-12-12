@@ -1,6 +1,7 @@
 import e from "express";
 import mongoose from "mongoose";
 
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -45,7 +46,10 @@ const userSchema = new mongoose.Schema({
     type:String,
     enum: ["active", "inactive"],
     default: "active"
-
+  },
+  companyname:{
+    type:String,
+  
   }
   
 

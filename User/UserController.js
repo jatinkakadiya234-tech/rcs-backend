@@ -609,10 +609,8 @@ const UserController = {
 
       console.log("user ....................");
 
-      if (!emailorphone || !password)
-        return res
-          .status(400)
-          .send({ message: "Email/Phone and password required" });
+      if(!emailorphone) return res.status(404).send({message:"email or phone is invailid"})
+      if(!password) return res.status(404).send({message:"password is invailid"})
 
       const query = /^\d+$/.test(emailorphone)
         ? { phone: Number(emailorphone) }
@@ -996,6 +994,7 @@ const UserController = {
 
   getAllUsers: async (req, res) => {
     try {
+
       const users = await User.find({}, "-password");
       res.status(200).send({ success: true, users });
     } catch (err) {
@@ -1083,8 +1082,8 @@ const UserController = {
 
   createUser: async (req, res) => {
     try {
-      const { name, email, password, phone, role , jioId, jioSecret } = req.body;
-      if (!name || !email || !password || !phone) {
+      const { name, email, password, phone, role , jioId, jioSecret,companyname } = req.body;
+      if (!name || !email || !password || !phone || !companyname) {
         return res.status(400).send({ message: "All fields are required" });
       }
 
@@ -1101,7 +1100,8 @@ const UserController = {
         phone,
         role: role || "user",
         jioId,
-        jioSecret
+        jioSecret,
+        companyname
       });
 
       res.status(201).send({
