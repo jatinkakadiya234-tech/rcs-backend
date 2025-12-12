@@ -36,7 +36,7 @@ const TemplateSchema = new mongoose.Schema({
 
   messageType: {
     type: String,
-    enum: ["plain-text", "text-with-action", "rcs", "carousel"],
+    enum: ["text", "text-with-action", "rcs", "carousel"],
     required: true
   },
 
