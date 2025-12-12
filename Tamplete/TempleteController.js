@@ -3,6 +3,13 @@ import Template from "./TampletModel.js";
 export const createTemplate = async (req, res) => {
   try {
     const template = new Template(req.body);
+ let {name} = req.body;
+  
+ let exitingname = await Template.find({name:name});
+ if(exitingname.length>0){
+    return res.status(400).json({ success: false, message: "Template name already exists" });
+ }
+
     await template.save();
     res.status(201).json({
       success: true,
