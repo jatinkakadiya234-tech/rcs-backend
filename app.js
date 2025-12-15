@@ -13,7 +13,7 @@ dotenv.config();
 const app = expess();
 ConnectDB();
 app.use(cors({
-  origin: ["http://localhost:5173","https://rcssender.com" ,"*"],
+  origin: ["http://localhost:5173","https://rcssender.com" ,],
   credentials: true,
 }));
 app.use(cookieParser());
