@@ -21,10 +21,10 @@ let tokenExpiry = null;
 const fetchJioToken = async (userId) => {
   const now = Date.now();
   if (cachedJioToken && tokenExpiry && now < tokenExpiry) return cachedJioToken;
- 
+
   const user = await User.findById(userId);
   if (!user || !user.jioId || !user.jioSecret) {
-    throw new Error('Jio credentials not found in user profile');
+    throw new Error("Jio credentials not found in user profile");
   }
 
   const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${user.jioId}&client_secret=${user.jioSecret}&scope=read`;
@@ -608,12 +608,18 @@ const UserController = {
     try {
       const { emailorphone, password } = req.body;
 
-      console.log(emailorphone, password , '--------req.body---------------------');
+      console.log(
+        emailorphone,
+        password,
+        "--------req.body---------------------"
+      );
 
       console.log("user ....................");
 
-      if(!emailorphone) return res.status(404).send({message:"email or phone is invailid"})
-      if(!password) return res.status(404).send({message:"password is invailid"})
+      if (!emailorphone)
+        return res.status(404).send({ message: "email or phone is invailid" });
+      if (!password)
+        return res.status(404).send({ message: "password is invailid" });
 
       const query = /^\d+$/.test(emailorphone)
         ? { phone: Number(emailorphone) }
@@ -631,10 +637,10 @@ const UserController = {
 
       // Generate JWT token
       const token = jwt.sign(
-        { 
-          userId: user._id, 
-          email: user.email, 
-          role: user.role 
+        {
+          userId: user._id,
+          email: user.email,
+          role: user.role,
         },
         process.env.JWT_SECRET || "your-secret-key",
         { expiresIn: "1d" }
@@ -645,21 +651,25 @@ const UserController = {
         httpOnly: false,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 1 * 24 * 60 * 60 * 1000 // 1 day
+        maxAge: 1 * 24 * 60 * 60 * 1000, // 1 day
       });
 
-      res.cookie("user_data", JSON.stringify({ ...user.toObject(), password: undefined }), {
-        httpOnly: false,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 1 * 24 * 60 * 60 * 1000 // 1 day
-      });
+      res.cookie(
+        "user_data",
+        JSON.stringify({ ...user.toObject(), password: undefined }),
+        {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 1 * 24 * 60 * 60 * 1000, // 1 day
+        }
+      );
 
       res.cookie("login_time", new Date().getTime().toString(), {
         httpOnly: false,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 1 * 24 * 60 * 60 * 1000 // 1 day
+        maxAge: 1 * 24 * 60 * 60 * 1000, // 1 day
       });
 
       res.status(200).send({
@@ -696,48 +706,61 @@ const UserController = {
   //       .send({ message: "Internal server error", error: err.message });
   //   }
   // },
+  webhookReceiver: async (req, res) => {
+    try {
+      // console.log("Received webhook:", req.body);
+      let data = req.body;
+          
+   console.log(data);
+      // Process the webhook data as needed
+    } catch ( error) {
+     console.error("Webhook processing error:", error);
+    }
+  },
 
   sendMessage: async (req, res) => {
     try {
       const { type, content, phoneNumbers, userId, campaignName } = req.body;
-
-
-      
+ 
       
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
-        return res.status(400).send({ success: false, message: "Missing required fields" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Missing required fields" });
       }
-    
+
       // Check user wallet balance
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
+
       const phoneCount = phoneNumbers.length;
       const costPerPhone = 1; // ₹1 per phone number
       const totalCost = phoneCount * costPerPhone;
-      
+
       if (user.Wallet < totalCost) {
-        return res.status(400).send({ 
-          success: false, 
+        return res.status(400).send({
+          success: false,
           message: "Insufficient balance",
           required: totalCost,
-          available: user.Wallet
+          available: user.Wallet,
         });
       }
-    
+
       const token = await fetchJioToken(userId);
       if (type === "text") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         // Deduct wallet balance
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
+
         const messageData = new Message({
           type,
           content,
@@ -745,28 +768,28 @@ const UserController = {
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
+
         // Store send responses
-      
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "Text message sent", 
+          message: "Text message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       } else if (type === "carousel") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
+
         const messageData = new Message({
           type,
           content,
@@ -774,53 +797,53 @@ const UserController = {
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "Text message sent", 
+          message: "Text message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       } else if (type === "text-with-action") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
-         const messageData = new Message({
+
+        const messageData = new Message({
           type,
           content,
           phoneNumbers,
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "Text message sent", 
+          message: "Text message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       } else if (type === "rcs") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
+
         const messageData = new Message({
           type,
           content,
@@ -828,26 +851,26 @@ const UserController = {
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "RCS message sent", 
+          message: "RCS message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       } else if (type === "suggestion") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
+
         const messageData = new Message({
           type,
           content,
@@ -855,26 +878,26 @@ const UserController = {
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "Suggestion message sent", 
+          message: "Suggestion message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       } else if (type === "webview") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
+
         const messageData = new Message({
           type,
           content,
@@ -882,26 +905,26 @@ const UserController = {
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "Webview message sent", 
+          message: "Webview message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       } else if (type === "dialer-action") {
         let results = await Promise.all(
           phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
         );
-        
+
         await User.findByIdAndUpdate(userId, {
-          $inc: { Wallet: -totalCost }
+          $inc: { Wallet: -totalCost },
         });
-        
+
         const messageData = new Message({
           type,
           content,
@@ -909,28 +932,36 @@ const UserController = {
           results,
           userId,
           cost: totalCost,
-          CampaignName: campaignName
+          CampaignName: campaignName,
         });
         await messageData.save();
-        
-        return res.status(200).send({ 
+
+        return res.status(200).send({
           success: true,
-          message: "Dialer action message sent", 
+          message: "Dialer action message sent",
           data: messageData,
           results,
-          walletDeducted: totalCost
+          walletDeducted: totalCost,
         });
       }
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
   checkAvablityNumber: async (req, res) => {
     try {
-      const { phoneNumbers  } = req.body;
+      const { phoneNumbers } = req.body;
       if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0)
-        return res.status(400).send({ success: false, message: "phoneNumbers array required" });
+        return res
+          .status(400)
+          .send({ success: false, message: "phoneNumbers array required" });
 
       // Get userId from request (you'll need to add auth middleware)
       const { userId } = req.body; // or get from auth middleware
@@ -943,31 +974,39 @@ const UserController = {
 
       res.status(200).send({ success: true, rcsMessaging: results });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
   uploadImage: async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).send({ success: false, message: "No image file provided" });
+        return res
+          .status(400)
+          .send({ success: false, message: "No image file provided" });
       }
 
       let result = await cloudinary.uploader.upload(req.file.path, {
         folder: "rcs",
-      })
+      });
 
       res.status(200).send({
         success: true,
         message: "Image uploaded successfully",
         url: result.secure_url,
-        public_id: result.public_id
+        public_id: result.public_id,
       });
     } catch (err) {
       res.status(500).send({
         success: false,
         message: "Image upload failed",
-        error: err.message
+        error: err.message,
       });
     }
   },
@@ -976,12 +1015,16 @@ const UserController = {
     try {
       const { amount, userId } = req.body;
       if (!amount || !userId) {
-        return res.status(400).send({ success: false, message: "Amount and userId required" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Amount and userId required" });
       }
-      
+
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
 
       const walletRequest = new WalletRequest({
@@ -996,7 +1039,13 @@ const UserController = {
         data: walletRequest,
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1005,7 +1054,13 @@ const UserController = {
       const users = await User.find({ role: { $ne: "admin" } }, "-password");
       res.status(200).send({ success: true, users });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1017,7 +1072,13 @@ const UserController = {
         .sort({ requestedAt: -1 });
       res.status(200).send({ success: true, requests });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1026,23 +1087,29 @@ const UserController = {
       const { requestId } = req.params;
       const { adminId, note } = req.body || {};
       console.log(req.body, "request body data");
-      console.log(req.params,"params data");
-      
+      console.log(req.params, "params data");
+
       if (!requestId || !adminId) {
-        return res.status(400).send({ success: false, message: "Missing required fields" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Missing required fields" });
       }
-      
+
       const request = await WalletRequest.findById(requestId);
       if (!request) {
-        return res.status(404).send({ success: false, message: "Request not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "Request not found" });
       }
 
       if (request.status !== "pending") {
-        return res.status(400).send({ success: false, message: "Request already processed" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Request already processed" });
       }
 
       await User.findByIdAndUpdate(request.userId, {
-        $inc: { Wallet: request.amount }
+        $inc: { Wallet: request.amount },
       });
 
       // Create transaction record
@@ -1067,25 +1134,33 @@ const UserController = {
         data: request,
       });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
   rejectWalletRequest: async (req, res) => {
     try {
       const { requestId, adminId, note } = req.body;
-      
+
       if (!requestId || !adminId) {
-        return res.status(400).send({ success: false, message: "Missing required fields" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Missing required fields" });
       }
-      
+
       const request = await WalletRequest.findById(requestId);
       if (!request) {
-        return res.status(404).send({ success: false, message: "Request not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "Request not found" });
       }
 
       if (request.status !== "pending") {
-        return res.status(400).send({ success: false, message: "Request already processed" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Request already processed" });
       }
 
       request.status = "rejected";
@@ -1100,20 +1175,37 @@ const UserController = {
         data: request,
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
   createUser: async (req, res) => {
     try {
-      const { name, email, password, phone, role , jioId, jioSecret,companyname } = req.body;
+      const {
+        name,
+        email,
+        password,
+        phone,
+        role,
+        jioId,
+        jioSecret,
+        companyname,
+      } = req.body;
       if (!name || !email || !password || !phone || !companyname) {
         return res.status(400).send({ message: "All fields are required" });
       }
 
       const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
       if (existingUser) {
-        return res.status(400).send({ message: "Email or Phone already exists" });
+        return res
+          .status(400)
+          .send({ message: "Email or Phone already exists" });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -1125,7 +1217,7 @@ const UserController = {
         role: role || "user",
         jioId,
         jioSecret,
-        companyname
+        companyname,
       });
 
       res.status(201).send({
@@ -1134,7 +1226,9 @@ const UserController = {
         user: { ...newUser.toObject(), password: undefined },
       });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
@@ -1147,7 +1241,9 @@ const UserController = {
       }
       res.status(200).send({ success: true, user });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
@@ -1155,39 +1251,57 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { limit = 10 } = req.query;
-      
+
       const user = await User.findById(userId, "-password");
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
+
       const recentTransactions = await Transaction.find({ userId })
         .sort({ createdAt: -1 })
         .limit(parseInt(limit));
-      
+
       const totalCredit = await Transaction.aggregate([
-        { $match: { userId: new mongoose.Types.ObjectId(userId), type: "credit" } },
-        { $group: { _id: null, total: { $sum: "$amount" } } }
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(userId),
+            type: "credit",
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
       ]);
-      
+
       const totalDebit = await Transaction.aggregate([
-        { $match: { userId: new mongoose.Types.ObjectId(userId), type: "debit" } },
-        { $group: { _id: null, total: { $sum: "$amount" } } }
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(userId),
+            type: "debit",
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
       ]);
-      
+
       const profile = {
         user,
         transactionSummary: {
           totalCredit: totalCredit[0]?.total || 0,
           totalDebit: totalDebit[0]?.total || 0,
-          currentBalance: user.Wallet
+          currentBalance: user.Wallet,
         },
-        recentTransactions
+        recentTransactions,
       };
-      
+
       res.status(200).send({ success: true, profile });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1197,7 +1311,9 @@ const UserController = {
       const messages = await Message.find({ userId }).sort({ createdAt: -1 });
       res.status(200).send({ success: true, messages });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
@@ -1208,10 +1324,12 @@ const UserController = {
       res.clearCookie("login_time");
       res.status(200).send({
         success: true,
-        message: "Logout successful"
+        message: "Logout successful",
       });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
@@ -1219,23 +1337,28 @@ const UserController = {
     try {
       const { userId } = req.params;
       const messages = await Message.find({ userId }).sort({ createdAt: -1 });
-      
+
       const stats = {
         totalMessages: messages.length,
-        successfulMessages: messages.filter(m => m.results?.some(r => r.status === 200 || r.status === 201)).length,
-        failedMessages: messages.filter(m => m.results?.some(r => r.error)).length,
+        successfulMessages: messages.filter((m) =>
+          m.results?.some((r) => r.status === 200 || r.status === 201)
+        ).length,
+        failedMessages: messages.filter((m) => m.results?.some((r) => r.error))
+          .length,
         messagesByType: messages.reduce((acc, msg) => {
-          const existing = acc.find(item => item._id === msg.type);
+          const existing = acc.find((item) => item._id === msg.type);
           if (existing) existing.count++;
           else acc.push({ _id: msg.type, count: 1 });
           return acc;
         }, []),
-        recentMessages: messages.slice(0, 10)
+        recentMessages: messages.slice(0, 10),
       };
-      
+
       res.status(200).send({ success: true, stats, messages });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
@@ -1246,18 +1369,20 @@ const UserController = {
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const messages = await Message.find({ 
+
+      const messages = await Message.find({
         userId,
         createdAt: {
           $gte: today,
-          $lt: tomorrow
-        }
+          $lt: tomorrow,
+        },
       }).sort({ createdAt: -1 });
-      
+
       res.status(200).send({ success: true, messages });
     } catch (err) {
-      res.status(500).send({ message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({ message: "Internal server error", error: err.message });
     }
   },
 
@@ -1265,17 +1390,29 @@ const UserController = {
     try {
       const { userId } = req.params;
       const updateData = req.body;
-      
+
       delete updateData.password;
-      
-      const user = await User.findByIdAndUpdate(userId, updateData, { new: true }).select("-password");
+
+      const user = await User.findByIdAndUpdate(userId, updateData, {
+        new: true,
+      }).select("-password");
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
-      res.status(200).send({ success: true, message: "User updated successfully", user });
+
+      res
+        .status(200)
+        .send({ success: true, message: "User updated successfully", user });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1283,21 +1420,25 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { amount } = req.body;
-      
+
       if (!amount || amount <= 0) {
-        return res.status(400).send({ success: false, message: "Valid amount required" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Valid amount required" });
       }
-      
+
       const user = await User.findByIdAndUpdate(
-        userId, 
-        { $inc: { Wallet: amount } }, 
+        userId,
+        { $inc: { Wallet: amount } },
         { new: true }
       ).select("-password");
-      
+
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
+
       // Create transaction record
       await TransactionController.createTransaction(
         userId,
@@ -1306,14 +1447,20 @@ const UserController = {
         `Admin added ₹${amount} to wallet`,
         "admin_add"
       );
-      
-      res.status(200).send({ 
-        success: true, 
-        message: `₹${amount} added to wallet successfully`, 
-        user 
+
+      res.status(200).send({
+        success: true,
+        message: `₹${amount} added to wallet successfully`,
+        user,
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1322,11 +1469,19 @@ const UserController = {
       const { userId } = req.params;
       const user = await User.findById(userId).select("-password");
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
       res.status(200).send({ success: true, user });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1335,11 +1490,21 @@ const UserController = {
       const { userId } = req.params;
       const user = await User.findByIdAndDelete(userId);
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      res.status(200).send({ success: true, message: "User deleted successfully" });
+      res
+        .status(200)
+        .send({ success: true, message: "User deleted successfully" });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1347,24 +1512,43 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { status } = req.body;
-      
+
       if (!status || !["active", "inactive"].includes(status)) {
-        return res.status(400).send({ success: false, message: "Valid status required (active/inactive)" });
+        return res
+          .status(400)
+          .send({
+            success: false,
+            message: "Valid status required (active/inactive)",
+          });
       }
-      
+
       const user = await User.findByIdAndUpdate(
-        userId, 
-        { status }, 
+        userId,
+        { status },
         { new: true }
       ).select("-password");
-      
+
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
-      res.status(200).send({ success: true, message: `User status updated to ${status}`, user });
+
+      res
+        .status(200)
+        .send({
+          success: true,
+          message: `User status updated to ${status}`,
+          user,
+        });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1372,25 +1556,40 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { newPassword } = req.body;
-      
+
       if (!newPassword || newPassword.length < 6) {
-        return res.status(400).send({ success: false, message: "Password must be at least 6 characters" });
+        return res
+          .status(400)
+          .send({
+            success: false,
+            message: "Password must be at least 6 characters",
+          });
       }
-      
+
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       const user = await User.findByIdAndUpdate(
-        userId, 
-        { password: hashedPassword }, 
+        userId,
+        { password: hashedPassword },
         { new: true }
       ).select("-password");
-      
+
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
-      res.status(200).send({ success: true, message: "Password reset successfully", user });
+
+      res
+        .status(200)
+        .send({ success: true, message: "Password reset successfully", user });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1399,27 +1598,42 @@ const UserController = {
       const { userId } = req.params;
       const user = await User.findById(userId).select("-password");
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
+
       const messages = await Message.find({ userId });
       const totalMessages = messages.length;
-      const totalSpent = messages.reduce((sum, msg) => sum + (msg.cost || 0), 0);
-      const successfulMessages = messages.filter(m => m.results?.some(r => r.status === 200 || r.status === 201)).length;
-      const failedMessages = messages.filter(m => m.results?.some(r => r.error)).length;
-      
+      const totalSpent = messages.reduce(
+        (sum, msg) => sum + (msg.cost || 0),
+        0
+      );
+      const successfulMessages = messages.filter((m) =>
+        m.results?.some((r) => r.status === 200 || r.status === 201)
+      ).length;
+      const failedMessages = messages.filter((m) =>
+        m.results?.some((r) => r.error)
+      ).length;
+
       const stats = {
         user,
         totalMessages,
         totalSpent,
         successfulMessages,
         failedMessages,
-        walletBalance: user.Wallet
+        walletBalance: user.Wallet,
       };
-      
+
       res.status(200).send({ success: true, stats });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1427,26 +1641,32 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { page = 1, limit = 10 } = req.query;
-      
+
       const messages = await Message.find({ userId })
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit);
-        
+
       const total = await Message.countDocuments({ userId });
-      
-      res.status(200).send({ 
-        success: true, 
-        messages, 
+
+      res.status(200).send({
+        success: true,
+        messages,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
           total,
-          pages: Math.ceil(total / limit)
-        }
+          pages: Math.ceil(total / limit),
+        },
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1454,26 +1674,32 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { amount } = req.body;
-      
+
       if (!amount || amount <= 0) {
-        return res.status(400).send({ success: false, message: "Valid amount required" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Valid amount required" });
       }
-      
+
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
+
       if (user.Wallet < amount) {
-        return res.status(400).send({ success: false, message: "Insufficient wallet balance" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Insufficient wallet balance" });
       }
-      
+
       const updatedUser = await User.findByIdAndUpdate(
-        userId, 
-        { $inc: { Wallet: -amount } }, 
+        userId,
+        { $inc: { Wallet: -amount } },
         { new: true }
       ).select("-password");
-      
+
       // Create transaction record
       await TransactionController.createTransaction(
         userId,
@@ -1482,32 +1708,46 @@ const UserController = {
         `Admin deducted ₹${amount} from wallet`,
         "admin_deduct"
       );
-      
-      res.status(200).send({ 
-        success: true, 
-        message: `₹${amount} deducted from wallet successfully`, 
-        user: updatedUser 
+
+      res.status(200).send({
+        success: true,
+        message: `₹${amount} deducted from wallet successfully`,
+        user: updatedUser,
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
   deleteWalletRequest: async (req, res) => {
     try {
       const { requestId } = req.params;
-      
+
       const request = await WalletRequest.findByIdAndDelete(requestId);
       if (!request) {
-        return res.status(404).send({ success: false, message: "Wallet request not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "Wallet request not found" });
       }
-      
-      res.status(200).send({ 
-        success: true, 
-        message: "Wallet request deleted successfully" 
+
+      res.status(200).send({
+        success: true,
+        message: "Wallet request deleted successfully",
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1515,48 +1755,59 @@ const UserController = {
     try {
       const { userId } = req.params;
       const { page = 1, limit = 20 } = req.query;
-      
+
       const user = await User.findById(userId).select("-password");
       if (!user) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
-      
+
       const messages = await Message.find({ userId })
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit);
-        
+
       const total = await Message.countDocuments({ userId });
-      
+
       const orderHistory = {
         user: {
           name: user.name,
           email: user.email,
           phone: user.phone,
-          currentBalance: user.Wallet
+          currentBalance: user.Wallet,
         },
-        orders: messages.map(msg => ({
+        orders: messages.map((msg) => ({
           _id: msg._id,
           type: msg.type,
           CampaignName: msg.CampaignName,
           phoneNumbers: msg.phoneNumbers,
           cost: msg.cost,
-          successCount: msg.results?.filter(r => r.status === 200 || r.status === 201).length || 0,
-          failedCount: msg.results?.filter(r => r.error || r.status >= 400).length || 0,
+          successCount:
+            msg.results?.filter((r) => r.status === 200 || r.status === 201)
+              .length || 0,
+          failedCount:
+            msg.results?.filter((r) => r.error || r.status >= 400).length || 0,
           totalNumbers: msg.phoneNumbers?.length || 0,
-          createdAt: msg.createdAt
+          createdAt: msg.createdAt,
         })),
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
           total,
-          pages: Math.ceil(total / limit)
-        }
+          pages: Math.ceil(total / limit),
+        },
       };
-      
+
       res.status(200).send({ success: true, orderHistory });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1567,56 +1818,50 @@ const UserController = {
         .select("-password")
         .sort({ createdAt: -1 })
         .limit(5);
-      
+
       // Recent Wallet Requests (last 5)
       let recentWalletRequests = await WalletRequest.find()
         .populate("userId", "name email")
         .sort({ requestedAt: -1 })
         .limit(5);
-      
+
       // Recent Transactions (last 5)
       let recentTransactions = await Transaction.find()
         .populate("userId", "name email")
         .sort({ createdAt: -1 })
         .limit(5);
-      
-     
-      
+
       // Dashboard Stats
-      const totalUsers = await User.countDocuments({ role: { $ne: "admin" } }) || 5;
-      const totalMessages = await Message.countDocuments() || 25;
-      const pendingRequests = await WalletRequest.countDocuments({ status: "pending" }) || 5;
-      const totalTransactions = await Transaction.countDocuments() || 15;
-      
+      const totalUsers =
+        (await User.countDocuments({ role: { $ne: "admin" } })) || 5;
+      const totalMessages = (await Message.countDocuments()) || 25;
+      const pendingRequests =
+        (await WalletRequest.countDocuments({ status: "pending" })) || 5;
+      const totalTransactions = (await Transaction.countDocuments()) || 15;
+
       const dashboard = {
         stats: {
           totalUsers,
           totalMessages,
           pendingRequests,
-          totalTransactions
+          totalTransactions,
         },
         recentUsers,
         recentWalletRequests,
-        recentTransactions
+        recentTransactions,
       };
-      
+
       res.status(200).send({ success: true, dashboard });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
-webhookReceiver: async (req, res) => {
-    try {
-      // console.log("Received webhook:", req.body);
-   return res.send("Webhook received",req.body);
-      // Process the webhook data as needed 
-}catch (err) {
-      console.error("Webhook processing error:", err);
-    } 
-
-}
-}
-
-
+};
 
 export default UserController;
