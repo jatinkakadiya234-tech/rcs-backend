@@ -275,12 +275,12 @@ console.log("data-----" ,data?.entity.messageId);
         { "results.messageId": messageId },
         {
           $set: {
-            "results.$.messaestatus": data.entity.messageStatus,
+            "results.$.messaestatus": data.entity.eventType,
             "results.$.error": data.entity.error,
           },
           $set:{
-            "successCount": data.entity.messageStatus === "DELIVERED" ? 1 : 0,
-            "failedCount": data.entity.messageStatus === "FAILED" ? 1 : 0,
+            "successCount": data.entity.eventType === "DELIVERED" ? 1 : 0,
+            "failedCount": data.entity.eventType === "FAILED" ? 1 : 0,
           }
         }
       );
