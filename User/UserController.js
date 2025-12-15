@@ -266,8 +266,9 @@ const UserController = {
     try {
       // console.log("Received webhook:", req.body);
       let data = req.body;
+      
 
-      let messageId = data.entity.messageId;
+      let messageId = data.messageId;
       console.log(messageId);
 
       let updatemessagresult = await Message.updateOne(
