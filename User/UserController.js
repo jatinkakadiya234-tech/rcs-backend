@@ -700,6 +700,10 @@ const UserController = {
   sendMessage: async (req, res) => {
     try {
       const { type, content, phoneNumbers, userId, campaignName } = req.body;
+
+      const webdata = webhookReceiver()
+      console.log(webdata);
+      
       
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res.status(400).send({ success: false, message: "Missing required fields" });
@@ -1604,7 +1608,8 @@ const UserController = {
   },
 webhookReceiver: async (req, res) => {
     try {
-      console.log("Received webhook:", req.body);
+      // console.log("Received webhook:", req.body);
+   return res.send("Webhook received",req.body);
       // Process the webhook data as needed 
 }catch (err) {
       console.error("Webhook processing error:", err);
