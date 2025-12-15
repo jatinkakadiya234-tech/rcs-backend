@@ -37,6 +37,10 @@ app.use("/api", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
 app.use("/api/v1/transactions", TransactionRoute);
+app.post("/api/jio/rcs/webhook", (req, res) => {
+  console.log("DATA FROM JIO:", req.body);
+  res.sendStatus(200);
+});
 
 const PORT = process.env.PORT || 8888;
 
