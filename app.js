@@ -38,14 +38,11 @@ app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
 app.use("/api/v1/transactions", TransactionRoute);
 app.post("/api/jio/rcs/webhook", (req, res) => {
-   const token = req.headers["x-client-token"];
-   if (token !== "6UBy1fLaZnxt3Zu") {
-    return res.sendStatus(401);
-  }
-
-  console.log("DATA FROM JIO:", req.body);
+  console.log("HEADERS:", req.headers);
+  console.log("BODY:", JSON.stringify(req.body, null, 2));
   res.sendStatus(200);
 });
+
 
 const PORT = process.env.PORT || 8888;
 
