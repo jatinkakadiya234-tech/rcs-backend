@@ -274,9 +274,13 @@ const UserController = {
         { "results.messageId": messageId },
         {
           $set: {
-            "results.$.messageStatus": data.entity.messageStatus,
+            "results.$.messaestatus": data.entity.messageStatus,
             "results.$.error": data.entity.error,
           },
+          $set:{
+            "successCount": data.entity.messageStatus === "DELIVERED" ? 1 : 0,
+            "failedCount": data.entity.messageStatus === "FAILED" ? 1 : 0,
+          }
         }
       );
       console.log(updatemessagresult);
