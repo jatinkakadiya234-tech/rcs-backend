@@ -268,7 +268,7 @@ const UserController = {
       let data = req.body;
 console.log("data-----" ,data?.entity.messageId);
 
-      let messageId = data.messageId;
+      let messageId = data?.entity.messageId;
       console.log(messageId ,"messageId from webhook");
 
       let updatemessagresult = await Message.updateOne(
