@@ -710,6 +710,9 @@ const UserController = {
     try {
       // console.log("Received webhook:", req.body);
       let data = req.body;
+    let headers = req.headers;
+
+  console.log(headers);
           
    console.log(data);
       // Process the webhook data as needed
