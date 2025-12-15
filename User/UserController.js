@@ -11,7 +11,6 @@ import Message from "../Message/MessageModel.js";
 import TransactionController from "../Transaction/TransactionController.js";
 import Transaction from "../Transaction/TransactionModel.js";
 import mongoose from "mongoose";
-import WebhookEventController from "../WebhookEvent/WebhookEventController.js";
 dotenv.config();
 
 // --- Token cache ---
@@ -701,13 +700,11 @@ const UserController = {
   sendMessage: async (req, res) => {
     try {
       const { type, content, phoneNumbers, userId, campaignName } = req.body;
-
-      console.log(req.body);
       
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res.status(400).send({ success: false, message: "Missing required fields" });
       }
-      
+      console.log(req.body+ "web -----------------");
       // Check user wallet balance
       const user = await User.findById(userId);
       if (!user) {
@@ -750,29 +747,7 @@ const UserController = {
         await messageData.save();
         
         // Store send responses
-        await Promise.all(results.map(async (result) => {
-          if (result.messageId) {
-            const responseEvent = {
-              userPhoneNumber: result.phone,
-              botId: process.env.JIO_ASSISTANT_ID,
-              entityType: 'SEND_RESPONSE',
-              entity: {
-                eventType: result.error ? 'SEND_FAILURE' : 'SEND_SUCCESS',
-                messageId: result.messageId,
-                sendTime: result.timestamp,
-                senderPhoneNumber: result.phone,
-                eventId: `send_${result.messageId}`,
-                response: result
-              }
-            };
-            try {
-              await WebhookEventController.storeWebhookEvent(responseEvent);
-            } catch (err) {
-              console.error('Error storing send response:', err);
-            }
-          }
-        }));
-        
+      
         return res.status(200).send({ 
           success: true,
           message: "Text message sent", 
