@@ -704,7 +704,7 @@ const UserController = {
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res.status(400).send({ success: false, message: "Missing required fields" });
       }
-      console.log(JSON.stringify(req.body, null, 2), '-------------req.body-------------------');
+    
       // Check user wallet balance
       const user = await User.findById(userId);
       if (!user) {
@@ -1602,6 +1602,17 @@ const UserController = {
       res.status(500).send({ success: false, message: "Internal server error", error: err.message });
     }
   },
-};
+webhookReceiver: async (req, res) => {
+    try {
+      console.log("Received webhook:", req.body);
+      // Process the webhook data as needed 
+}catch (err) {
+      console.error("Webhook processing error:", err);
+    } 
+
+}
+}
+
+
 
 export default UserController;
