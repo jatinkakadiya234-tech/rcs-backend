@@ -7,6 +7,7 @@ import cors from "cors";
 import TemplateRoute from "./Tamplete/TampleteRoute.js";
 import MessageApiRoute from "./Message/MessageRoute.js";
 import TransactionRoute from "./Transaction/TransactionRoute.js";
+import WebhookRoute from "./Webhook/WebhookRoute.js";
 
 dotenv.config();
 
@@ -37,10 +38,7 @@ app.use("/api", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
 app.use("/api/v1/transactions", TransactionRoute);
-// app.post("/api/jio/rcs/webhook", (req, res) => {
-//   console.log("BODY:", JSON.stringify(req.body, null, 2));
-//   res.sendStatus(200);
-// });
+app.use("/api/webhook", WebhookRoute);
 
 
 const PORT = process.env.PORT || 8888;

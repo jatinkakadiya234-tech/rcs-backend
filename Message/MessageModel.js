@@ -18,7 +18,10 @@ const MessageSchema = new mongoose.Schema({
     messageId: String,
     timestamp: String,
     result: String,
-    error: Boolean
+    error: Boolean,
+    webhookResponse: { type: mongoose.Schema.Types.Mixed },
+    deliveryStatus: String,
+    updatedAt: Date
   }],
   successCount: { type: Number, default: 0 },
   failedCount: { type: Number, default: 0 },
