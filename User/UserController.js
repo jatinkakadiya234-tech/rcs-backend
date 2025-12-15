@@ -262,36 +262,41 @@ const UserController = {
   //       .send({ message: "Internal server error", error: err.message });
   //   }
   // },
-  webhookReceiver: async (req, res) => {
-    try {
-      // console.log("Received webhook:", req.body);
-      let data = req.body;
-console.log("data-----" ,data?.entity.messageId);
+webhookReceiver: async (req, res) => {
+  try {
+    const data = req.body;
 
-      let messageId = data?.entity.messageId;
-      console.log(messageId ,"messageId from webhook");
+    const messageId = data?.entity?.messageId;
+    const eventType = data?.entity?.eventType;
 
-      let updatemessagresult = await Message.updateOne(
-        { "results.messageId": messageId },
-        {
-          $set: {
-            "results.$.messaestatus": data.entity.eventType,
-            "results.$.error": data.entity.error,
-          },
-          $set:{
-            "successCount": data.entity.eventType === "DELIVERED" ? 1 : 0,
-            "failedCount": data.entity.eventType === "FAILED" ? 1 : 0,
-          }
-        }
-      );
-      console.log(updatemessagresult);
-
-
-      // Process the webhook data as needed
-    } catch ( error) {
-     console.error("Webhook processing error:", error);
+    if (!messageId) {
+      return res.status(400).send({ success: false, message: "messageId missing" });
     }
-  },
+
+    const updateResult = await Message.updateOne(
+      { "results.messageId": messageId },
+      {
+        $set: {
+          "results.$.messaestatus": eventType,
+          "results.$.error": data?.entity?.error || null,
+        },
+        $inc: {
+          successCount: eventType === "DELIVERED" ? 1 : 0,
+          failedCount: eventType === "FAILED" ? 1 : 0,
+        }
+      }
+    );
+
+    console.log("Webhook Update:", updateResult);
+
+    return res.status(200).send({ success: true });
+
+  } catch (error) {
+    console.error("Webhook processing error:", error);
+    return res.status(500).send({ success: false });
+  }
+},
+
 
   sendMessage: async (req, res) => {
     try {
