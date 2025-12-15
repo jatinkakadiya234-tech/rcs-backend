@@ -701,8 +701,7 @@ const UserController = {
     try {
       const { type, content, phoneNumbers, userId, campaignName } = req.body;
 
-      const webdata = webhookReceiver()
-      console.log(webdata);
+
       
       
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
