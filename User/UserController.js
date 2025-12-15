@@ -264,36 +264,30 @@ const UserController = {
   // },
 webhookReceiver: async (req, res) => {
   try {
-    const data = req.body;
+    const webhookData = req.body;
+    console.log("📥 Jio Webhook Received:", JSON.stringify(webhookData, null, 2));
 
-    const messageId = data?.entity?.messageId;
-    const eventType = data?.entity?.eventType;
-
-    if (!messageId) {
-      return res.status(400).send({ success: false, message: "messageId missing" });
-    }
-
-    const updateResult = await Message.updateOne(
-      { "results.messageId": messageId },
-      {
-        $set: {
-          "results.$.messaestatus": eventType,
-          "results.$.error": data?.entity?.error || null,
-        },
-        $inc: {
-          successCount: eventType === "DELIVERED" ? 1 : 0,
-          failedCount: eventType === "FAILED" ? 1 : 0,
+    const messageId = webhookData?.entity?.messageId || webhookData?.messageId;
+    const eventType = webhookData?.entity?.eventType || webhookData?.status;
+    
+    if (messageId) {
+      const message = await Message.findOne({ "results.messageId": messageId });
+      
+      if (message) {
+        const resultIndex = message.results.findIndex(r => r.messageId === messageId);
+        if (resultIndex !== -1) {
+          message.results[resultIndex].messaestatus = eventType;
+          message.results[resultIndex].error = webhookData?.entity?.error || (eventType === "FAILED");
+          await message.save();
+          console.log(`✅ Updated message ${messageId} with status: ${eventType}`);
         }
       }
-    );
+    }
 
-    console.log("Webhook Update:", updateResult);
-
-    return res.status(200).send({ success: true });
-
+    res.status(200).json({ success: true, message: "Webhook received" });
   } catch (error) {
-    console.error("Webhook processing error:", error);
-    return res.status(500).send({ success: false });
+    console.error("❌ Webhook Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 },
 

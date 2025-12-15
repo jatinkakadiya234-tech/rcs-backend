@@ -26,7 +26,7 @@ const MessageSchema = new mongoose.Schema({
       messageId: String,
       timestamp: String,
       result: String,
-      error: Boolean,
+      error: { type: mongoose.Schema.Types.Mixed },
       messaestatus: String,
     },
   ],
