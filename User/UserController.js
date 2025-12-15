@@ -11,6 +11,7 @@ import Message from "../Message/MessageModel.js";
 import TransactionController from "../Transaction/TransactionController.js";
 import Transaction from "../Transaction/TransactionModel.js";
 import mongoose from "mongoose";
+import WebhookEventController from "../WebhookEvent/WebhookEventController.js";
 dotenv.config();
 
 // --- Token cache ---
@@ -745,6 +746,30 @@ const UserController = {
           CampaignName: campaignName
         });
         await messageData.save();
+        
+        // Store send responses
+        await Promise.all(results.map(async (result) => {
+          if (result.messageId) {
+            const responseEvent = {
+              userPhoneNumber: result.phone,
+              botId: process.env.JIO_ASSISTANT_ID,
+              entityType: 'SEND_RESPONSE',
+              entity: {
+                eventType: result.error ? 'SEND_FAILURE' : 'SEND_SUCCESS',
+                messageId: result.messageId,
+                sendTime: result.timestamp,
+                senderPhoneNumber: result.phone,
+                eventId: `send_${result.messageId}`,
+                response: result
+              }
+            };
+            try {
+              await WebhookEventController.storeWebhookEvent(responseEvent);
+            } catch (err) {
+              console.error('Error storing send response:', err);
+            }
+          }
+        }));
         
         return res.status(200).send({ 
           success: true,
