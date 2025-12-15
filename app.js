@@ -7,7 +7,7 @@ import cors from "cors";
 import TemplateRoute from "./Tamplete/TampleteRoute.js";
 import MessageApiRoute from "./Message/MessageRoute.js";
 import TransactionRoute from "./Transaction/TransactionRoute.js";
-import { findjioId } from "./middleware/roleCheck.js";
+
 dotenv.config();
 
 const app = expess();
@@ -49,6 +49,3 @@ const PORT = process.env.PORT || 8888;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
-
-

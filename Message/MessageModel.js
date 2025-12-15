@@ -14,14 +14,20 @@ const MessageSchema = new mongoose.Schema({
   cost: { type: Number, default: 0 },
   results: [{
     phone: String,
-    status: Number,
+    status: { type: String, default: 'pending' },
     messageId: String,
     timestamp: String,
     result: String,
-    error: Boolean
+    error: { type: String },
+    delivered: { type: Boolean, default: false },
+    deliveredAt: Date,
+    read: { type: Boolean, default: false },
+    readAt: Date
   }],
   successCount: { type: Number, default: 0 },
   failedCount: { type: Number, default: 0 },
+  deliveredCount: { type: Number, default: 0 },
+  readCount: { type: Number, default: 0 },
   failedNumbers: [{ type: String }],
   errorSummary: { type: String },
   errorMessage: { type: String },

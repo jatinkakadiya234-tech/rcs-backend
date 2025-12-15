@@ -1,5 +1,6 @@
 import WebhookEvent from "./WebhookEventModel.js";
 import User from "../User/UserModel.js";
+import Message from "../Message/MessageModel.js";
 
 const WebhookEventController = {
   storeWebhookEvent: async (webhookData) => {
@@ -34,10 +35,69 @@ const WebhookEventController = {
       const webhookEvent = new WebhookEvent(eventData);
       await webhookEvent.save();
       
+      // Update message status
+      await this.updateMessageStatus(entity, userPhoneNumber);
+      
       return webhookEvent;
     } catch (error) {
       console.error('Error storing webhook event:', error);
       throw error;
+    }
+  },
+
+  updateMessageStatus: async (entity, userPhoneNumber) => {
+    try {
+      const { messageId, eventType, error } = entity;
+      
+      const message = await Message.findOne({
+        'results.messageId': messageId
+      });
+      
+      if (!message) return;
+      
+      const resultIndex = message.results.findIndex(r => r.messageId === messageId);
+      if (resultIndex === -1) return;
+      
+      switch (eventType) {
+        case 'SEND_SUCCESS':
+          message.results[resultIndex].status = 'sent';
+          break;
+        case 'SEND_MESSAGE_FAILURE':
+        case 'SEND_FAILURE':
+          message.results[resultIndex].status = 'failed';
+          message.results[resultIndex].error = error?.message || 'Send failed';
+          break;
+        case 'MESSAGE_DELIVERED':
+          message.results[resultIndex].delivered = true;
+          message.results[resultIndex].deliveredAt = new Date();
+          break;
+        case 'MESSAGE_READ':
+          message.results[resultIndex].read = true;
+          message.results[resultIndex].readAt = new Date();
+          break;
+      }
+      
+      // Recalculate counts
+      const successCount = message.results.filter(r => r.status === 'sent').length;
+      const failedCount = message.results.filter(r => r.status === 'failed').length;
+      const deliveredCount = message.results.filter(r => r.delivered).length;
+      const readCount = message.results.filter(r => r.read).length;
+      
+      message.successCount = successCount;
+      message.failedCount = failedCount;
+      message.deliveredCount = deliveredCount;
+      message.readCount = readCount;
+      
+      if (failedCount > 0 && successCount === 0) {
+        message.status = 'failed';
+      } else if (successCount > 0) {
+        message.status = 'sent';
+      }
+      
+      await message.save();
+      console.log(`Updated message ${messageId}: ${eventType}`);
+    } catch (error) {
+      console.error('Error updating message status:', error);
     }
   },
 
