@@ -278,7 +278,7 @@ webhookReceiver: async (req, res) => {
         if (resultIndex !== -1) {
           message.results[resultIndex].messaestatus = eventType;
           message.results[resultIndex].error = webhookData?.entity?.error || (eventType === "SEND_MESSAGE_FAILURE");
-          message.successCount = message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ").length;
+          message.successCount = message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ" || r.messaestatus==="SEND_MESSAGE_SUCCESS").length;
           message.failedCount = message.results.filter(r => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
           await message.save();
           console.log(`✅ Updated message ${messageId} with status: ${eventType}`);
