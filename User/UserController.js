@@ -85,12 +85,20 @@ const sendJioSms = async (phoneNumber, content, token, type) => {
       content: content,
     };
 
+    console.log(`📤 Sending message to ${formattedPhone} with ID: ${messageId}`);
+    
     const response = await axios.post(url, payload, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       timeout: 10000,
+    });
+
+    console.log(`✅ Message sent successfully to ${formattedPhone}:`, {
+      status: response.status,
+      messageId,
+      timestamp: new Date().toISOString()
     });
 
     return {
@@ -106,7 +114,7 @@ const sendJioSms = async (phoneNumber, content, token, type) => {
       _messageStatus: response.headers["x-message-status"] || null,
     };
   } catch (error) {
-    console.error("❌ Jio API Error:", error.response?.data || error.message);
+    console.error(`❌ Jio API Error for ${phoneNumber}:`, error.response?.data || error.message);
     return {
       phone: phoneNumber,
       status: error.response?.status || 500,
@@ -117,459 +125,7 @@ const sendJioSms = async (phoneNumber, content, token, type) => {
   }
 };
 
-// const sendRcsRichCard = async ({
-//   imageUrl,
-//   title,
-//   subtitle,
-//   phoneNumbers,
-//   callUrl,
-//   jioToken,
-//   type,
-// }) => {
-//   const results = [];
-//   await Promise.all(
-//     phoneNumbers.map(async (phone) => {
-//       const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-//       const messageId = uuidv4();
 
-//       const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
-
-//       // const payload = {
-//       //   content: {
-//       //     richCardDetails: {
-//       //       Standalone: {
-//       //         cardOrientation: "VERTICAL",
-//       //         content: {
-//       //           cardTitle: title,
-//       //           cardDescription: subtitle,
-//       //           cardMedia: {
-//       //             mediaHeight: "MEDIUM",
-//       //             contentInfo: {
-//       //               fileUrl: imageUrl,
-//       //               thumbnailUrl: imageUrl,
-//       //             },
-//       //           },
-//       //           suggestions: [
-//       //             {
-//       //               Action: {
-//       //                 plainText: "Visit Website 🌐",
-//       //                 postback: { data: "visit_site" },
-//       //                 openUrl: { url: callUrl },
-//       //               },
-//       //             },
-//       //             {
-//       //               Action: {
-//       //                 plainText: "Call Us 📞",
-//       //                 postback: { data: "call_support" },
-//       //                 dialerAction: { phoneNumber: "+919999999999" },
-//       //               },
-//       //             },
-//       //             {
-//       //               Reply: {
-//       //                 plainText: "Stop",
-//       //                 postback: { data: "stop_msg" },
-//       //               },
-//       //             },
-//       //           ],
-//       //         },
-//       //       },
-//       //     },
-//       //   },
-//       // };
-
-//       if (type === "carousel") {
-//         const payload = {
-//           content: {
-//             richCardDetails: {
-//               carousel: {
-//                 cardWidth: "MEDIUM_WIDTH",
-//                 contents: [
-//                   {
-//                     cardTitle: "Explore the web securely",
-//                     cardDescription:
-//                       "Loaded with features like AdBlocker, Multiple search engines & VPN for Indians",
-//                     cardMedia: {
-//                       contentInfo: {
-//                         fileUrl:
-//                           "https://jfxv.akamaized.net/JBMCampaigns/JioSphere/Creatives/Camp1/caro1_card1.jpg",
-//                       },
-//                       mediaHeight: "MEDIUM",
-//                     },
-//                     suggestions: [
-//                       {
-//                         action: {
-//                           plainText: "Browse Now",
-//                           postBack: {
-//                             data: "SA1L1C1",
-//                           },
-//                           openUrl: {
-//                             url: "https://jiosphere.page.link/creative1",
-//                           },
-//                         },
-//                       },
-//                     ],
-//                   },
-//                   {
-//                     cardTitle: "Entertainment on tap",
-//                     cardDescription:
-//                       "Enjoy tailored content in your language across various topics",
-//                     cardMedia: {
-//                       contentInfo: {
-//                         fileUrl:
-//                           "https://jfxv.akamaized.net/JBMCampaigns/JioSphere/Creatives/Camp1/caro1_card2.jpg",
-//                       },
-//                       mediaHeight: "MEDIUM",
-//                     },
-//                     suggestions: [
-//                       {
-//                         action: {
-//                           plainText: "Download Now",
-//                           postBack: {
-//                             data: "SA2L1C2",
-//                           },
-//                           openUrl: {
-//                             url: "https://jiosphere.page.link/Creative2",
-//                           },
-//                         },
-//                       },
-//                     ],
-//                   },
-//                   {
-//                     cardTitle: "Your digital privacy matters",
-//                     cardDescription:
-//                       "Anti-tracking mode stops websites from tracking you",
-//                     cardMedia: {
-//                       contentInfo: {
-//                         fileUrl:
-//                           "https://jfxv.akamaized.net/JBMCampaigns/JioSphere/Creatives/Camp1/caro1_card3.jpg",
-//                       },
-//                       mediaHeight: "MEDIUM",
-//                     },
-//                     suggestions: [
-//                       {
-//                         action: {
-//                           plainText: "Browse Privately",
-//                           postBack: {
-//                             data: "SA3L1C3",
-//                           },
-//                           openUrl: {
-//                             url: "https://jiosphere.page.link/Creative3",
-//                           },
-//                         },
-//                       },
-//                     ],
-//                   },
-//                 ],
-//               },
-//             },
-//             suggestions: [
-//               {
-//                 reply: {
-//                   plainText: "Know More",
-//                   postBack: {
-//                     data: "SR1L1C0",
-//                   },
-//                 },
-//               },
-//             ],
-//           },
-//         };
-//         try {
-//           const resp = await axios.post(url, payload, {
-//             headers: {
-//               Authorization: `Bearer ${jioToken}`,
-//               "Content-Type": "application/json",
-//             },
-//           });
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: resp.status,
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: formattedPhone,
-//             status: err.response?.status || 500,
-//             response: err.response?.data || err.message,
-//           });
-//         }
-//       } else if (type === "VERTICAL") {
-//         const payload = {
-//           content: {
-//             richCardDetails: {
-//               standalone: {
-//                 cardOrientation: "VERTICAL",
-//                 content: {
-//                   cardTitle: title,
-//                   cardDescription: subtitle,
-//                   cardMedia: {
-//                     mediaHeight: "TALL",
-//                     contentInfo: {
-//                       fileUrl: imageUrl,
-//                     },
-//                   },
-//                   suggestions: [
-//                     {
-//                       reply: {
-//                         plainText: "Suggestion #1",
-//                         postBack: {
-//                           data: "suggestion_1",
-//                         },
-//                       },
-//                     },
-//                     {
-//                       Action: {
-//                         plainText: "Call Us 📞",
-//                         postback: { data: "call_support" },
-//                         dialerAction: { phoneNumber: callUrl },
-//                       },
-//                     },
-//                   ],
-//                 },
-//               },
-//             },
-//           },
-//         };
-//         try {
-//           const resp = await axios.post(url, payload, {
-//             headers: {
-//               Authorization: `Bearer ${jioToken}`,
-//               "Content-Type": "application/json",
-//             },
-//           });
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: resp.status,
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: formattedPhone,
-//             status: err.response?.status || 500,
-//             response: err.response?.data || err.message,
-//           });
-//         }
-//       } else if (type === "rcs") {
-//         const payload = {
-//           content: {
-//             richCardDetails: {
-//               standalone: {
-//                 cardOrientation: "VERTICAL",
-//                 content: {
-//                   cardTitle: "This is card title",
-//                   cardDescription: "This is card description",
-//                   cardMedia: {
-//                     mediaHeight: "TALL",
-//                     contentInfo: {
-//                       fileUrl:
-//                         "http://www.google.com/logos/doodles/2015/googles-new-logo-5078286822539264.3-hp2x.gif",
-//                     },
-//                   },
-//                   suggestions: [
-//                     {
-//                       reply: {
-//                         plainText: "Suggestion #1",
-//                         postBack: {
-//                           data: "suggestion_1",
-//                         },
-//                       },
-//                     },
-//                     {
-//                       reply: {
-//                         plainText: "Suggestion #2",
-//                         postBack: {
-//                           data: "suggestion_2",
-//                         },
-//                       },
-//                     },
-//                   ],
-//                 },
-//               },
-//             },
-//           },
-//         };
-//         try {
-//           const resp = await axios.post(url, payload, {
-//             headers: {
-//               Authorization: `Bearer ${jioToken}`,
-//               "Content-Type": "application/json",
-//             },
-//           });
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: resp.status,
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: formattedPhone,
-//             status: err.response?.status || 500,
-//             response: err.response?.data || err.message,
-//           });
-//         }
-//       } else if (type === "interactive") {
-//         const payload = {};
-//         try {
-//           const resp = await axios.post(url, payload, {
-//             headers: {
-//               Authorization: `Bearer ${jioToken}`,
-//               "Content-Type": "application/json",
-//             },
-//           });
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: resp.status,
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: formattedPhone,
-//             status: err.response?.status || 500,
-//             response: err.response?.data || err.message,
-//           });
-//         }
-//       } else if (type === "button") {
-//         const payload = {
-//           content: {
-//             plainText: "Visit this URL to find more about Jiosphere",
-//             suggestions: [
-//               {
-//                 action: {
-//                   plainText: "Browse Now",
-//                   postBack: {
-//                     data: "SA1L1C1",
-//                   },
-//                   openUrl: {
-//                     url: "https://medium.com/hprog99/mastering-generics-in-go-a-comprehensive-guide-4d05ec4b12b",
-//                     application: "WEBVIEW",
-//                     webviewViewMode: "TALL",
-//                     description: "its a link",
-//                   },
-//                 },
-//               },
-//             ],
-//           },
-//         };
-//         try {
-//           const resp = await axios.post(url, payload, {
-//             headers: {
-//               Authorization: `Bearer ${jioToken}`,
-//               "Content-Type": "application/json",
-//             },
-//           });
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: resp.status,
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: formattedPhone,
-//             status: err.response?.status || 500,
-//             response: err.response?.data || err.message,
-//           });
-//         }
-//       } else {
-//         const payload = {};
-//         try {
-//           const resp = await axios.post(url, payload, {
-//             headers: {
-//               Authorization: `Bearer ${jioToken}`,
-//               "Content-Type": "application/json",
-//             },
-//           });
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: resp.status,
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: formattedPhone,
-//             status: err.response?.status || 500,
-//             response: err.response?.data || err.message,
-//           });
-//         }
-//       }
-
-//       try {
-//         const resp = await axios.post(url, payload, {
-//           headers: {
-//             Authorization: `Bearer ${jioToken}`,
-//             "Content-Type": "application/json",
-//           },
-//         });
-
-//         results.push({
-//           phone: formattedPhone,
-//           status: resp.status,
-//         });
-//       } catch (err) {
-//         results.push({
-//           phone: formattedPhone,
-//           status: err.response?.status || 500,
-//           response: err.response?.data || err.message,
-//         });
-//       }
-//     })
-//   );
-
-//   return results;
-// };
-
-// const carasolmesage = async ({ phoneNumbers, jioToken ,}) => {
-//    try {
-//     // 🧹 Format phone number
-//     let formattedPhone = phoneNumber
-//       .toString()
-//       .trim()
-//       .replace(/[^0-9+]/g, "");
-//     if (!formattedPhone.startsWith("+91"))
-//       formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
-
-//     const messageId = `msg_${uuidv4()}`;
-//     const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
-
-//     // ✅ Official payload structure (from Jio docs)
-//     const payload = {
-//       botId: process.env.JIO_ASSISTANT_ID,
-//       content: content
-//     };
-
-//     const response = await axios.post(url, payload, {
-//       headers: {
-//         Authorization: `Bearer ${token}`,
-//         "Content-Type": "application/json",
-//       },
-//       timeout: 10000,
-//     });
-
-//     console.log("📩 Jio Response:", response);
-
-//     return {
-//       phone: formattedPhone,
-//       status: response.status,
-//       response: response.data,
-//       messageId,
-//       timestamp: new Date().toISOString(),
-//       result: "Message Sent Successfully",
-//       type: "text",
-//       statusText: response.statusText,
-//       _eventsCount:response.headers['x-events-count'] || null,
-//       _messageStatus:response.headers['x-message-status'] || null,
-
-//     };
-//   } catch (error) {
-//     console.error("❌ Jio API Error:", error.response?.data || error.message);
-//     return {
-//       phone: phoneNumber,
-//       status: error.response?.status || 500,
-//       response: { error: error.response?.data || error.message },
-//       error: true,
-//       timestamp: new Date().toISOString(),
-//     };
-//   }
-// }
 
 // --- Controller Object ---
 const UserController = {
@@ -710,11 +266,22 @@ const UserController = {
     try {
       // console.log("Received webhook:", req.body);
       let data = req.body;
-    let headers = req.headers;
 
-  console.log(headers);
-          
-   console.log(data);
+      let messageId = data.entity.messageId;
+      console.log(messageId);
+
+      let updatemessagresult = await Message.updateOne(
+        { "results.messageId": messageId },
+        {
+          $set: {
+            "results.$.messageStatus": data.entity.messageStatus,
+            "results.$.error": data.entity.error,
+          },
+        }
+      );
+      console.log(updatemessagresult);
+
+
       // Process the webhook data as needed
     } catch ( error) {
      console.error("Webhook processing error:", error);

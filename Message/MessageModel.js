@@ -18,7 +18,9 @@ const MessageSchema = new mongoose.Schema({
     messageId: String,
     timestamp: String,
     result: String,
-    error: Boolean
+    error: Boolean,
+    messageStatus: String
+    
   }],
   successCount: { type: Number, default: 0 },
   failedCount: { type: Number, default: 0 },
