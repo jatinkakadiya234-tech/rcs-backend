@@ -78,8 +78,8 @@ const MessageController = {
       
       const ordersWithCounts = recentOrders.map(order => ({
         ...order.toObject(),
-        successCount: order.results?.filter(r => r.status === 201).length || 0,
-        failedCount: order.results?.filter(r => r.status === 400 || r.status === 404).length || 0
+        successCount: order.results?.filter(r => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ" || r.messaestatus==="SEND_MESSAGE_SUCCESS").length || 0,
+        failedCount: order.results?.filter(r => r.messaestatus === "SEND_MESSAGE_FAILURE").length || 0
       }));
       
       res.status(200).send({
@@ -102,10 +102,9 @@ const MessageController = {
       const messages = await Message.find({ userId });
       
       const totalMessages = messages.length;
-      const failedMessages = messages.filter(m => m.status === "failed" || m.failedCount > 0).length;
-      const pendingMessages = messages.filter(m => m.status === "pending").length;
-      const sentMessages = messages.filter(m => m.status === "sent" || m.successCount > 0).length;
-      let sendtoteltemplet = await  (await Template.find({userId:userId})).length
+      const failedMessages = messages.filter(m => m.failedCount > 0).length;
+      const sentMessages = messages.filter(m => m.successCount > 0).length;
+      let sendtoteltemplet = await (await Template.find({userId:userId})).length;
     
 
       
@@ -114,7 +113,7 @@ const MessageController = {
         data: {
           totalMessages,
           failedMessages,
-          pendingMessages,
+          pendingMessages: messages.filter(m => m.failedCount === 0 && m.successCount === 0).length,
           sentMessages,
           sendtoteltemplet
         }
