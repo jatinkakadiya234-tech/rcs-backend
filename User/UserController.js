@@ -704,7 +704,7 @@ const UserController = {
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res.status(400).send({ success: false, message: "Missing required fields" });
       }
-      console.log(req.body.toString(), '-------------req.body-------------------');
+      console.log(JSON.stringify(req.body, null, 2), '-------------req.body-------------------');
       // Check user wallet balance
       const user = await User.findById(userId);
       if (!user) {
