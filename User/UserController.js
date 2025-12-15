@@ -266,7 +266,7 @@ const UserController = {
     try {
       // console.log("Received webhook:", req.body);
       let data = req.body;
-console.log("data-----" ,data?.messageId);
+console.log("data-----" ,data?.entity.messageId);
 
       let messageId = data.messageId;
       console.log(messageId ,"messageId from webhook");
