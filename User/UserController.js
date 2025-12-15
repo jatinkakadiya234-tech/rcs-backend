@@ -701,6 +701,8 @@ const UserController = {
   sendMessage: async (req, res) => {
     try {
       const { type, content, phoneNumbers, userId, campaignName } = req.body;
+
+      console.log(req.body);
       
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res.status(400).send({ success: false, message: "Missing required fields" });

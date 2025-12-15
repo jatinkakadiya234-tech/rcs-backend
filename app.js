@@ -37,10 +37,10 @@ app.use("/api", userRouter);
 app.use("/api/v1/templates", TemplateRoute);
 app.use("/api/v1/message-reports", MessageApiRoute);
 app.use("/api/v1/transactions", TransactionRoute);
-app.post("/api/jio/rcs/webhook", (req, res) => {
-  console.log("BODY:", JSON.stringify(req.body, null, 2));
-  res.sendStatus(200);
-});
+// app.post("/api/jio/rcs/webhook", (req, res) => {
+//   console.log("BODY:", JSON.stringify(req.body, null, 2));
+//   res.sendStatus(200);
+// });
 
 
 const PORT = process.env.PORT || 8888;
