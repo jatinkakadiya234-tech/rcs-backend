@@ -262,6 +262,45 @@ const UserController = {
   //       .send({ message: "Internal server error", error: err.message });
   //   }
   // },
+updateProfile: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { name, email, phone, companyname } = req.body;
+
+      if (!userId) {
+        return res.status(400).send({ success: false, message: "User ID is required" });
+      }
+
+      const updateData = {};
+      if (name) updateData.name = name;
+      if (email) updateData.email = email;
+      if (phone) updateData.phone = phone;
+      if (companyname) updateData.companyname = companyname;
+
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        updateData,
+        { new: true, select: '-password' }
+      );
+
+      if (!updatedUser) {
+        return res.status(404).send({ success: false, message: "User not found" });
+      }
+
+      res.status(200).send({
+        success: true,
+        message: "Profile updated successfully",
+        user: updatedUser
+      });
+    } catch (error) {
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: error.message
+      });
+    }
+  },
+
 webhookReceiver: async (req, res) => {
   try {
     const webhookData = req.body;
