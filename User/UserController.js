@@ -277,10 +277,21 @@ webhookReceiver: async (req, res) => {
       if (message) {
         const resultIndex = message.results.findIndex(r => r.messageId === messageId);
         if (resultIndex !== -1) {
+          const oldStatus = message.results[resultIndex].messaestatus;
           message.results[resultIndex].messaestatus = eventType;
           message.results[resultIndex].error = webhookData?.entity?.error || (eventType === "SEND_MESSAGE_FAILURE");
+          
+          // If message failed and wasn't already failed, refund user
+          if (eventType === "SEND_MESSAGE_FAILURE" && oldStatus !== "SEND_MESSAGE_FAILURE") {
+            await User.findByIdAndUpdate(message.userId, {
+              $inc: { Wallet: 1 } // Refund ₹1 per failed message
+            });
+            console.log(`💰 Refunded ₹1 to user ${message.userId} for failed message ${messageId}`);
+          }
+          
           message.successCount = message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ" || r.messaestatus==="SEND_MESSAGE_SUCCESS").length;
           message.failedCount = message.results.filter(r => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
+        
           await message.save();
           console.log(`✅ Updated message ${messageId} with status: ${eventType}`);
         }
