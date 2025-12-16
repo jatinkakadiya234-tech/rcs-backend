@@ -272,6 +272,7 @@ webhookReceiver: async (req, res) => {
     
     if (messageId) {
       const message = await Message.findOne({ "results.messageId": messageId });
+      console.log(message);
       
       if (message) {
         const resultIndex = message.results.findIndex(r => r.messageId === messageId);
