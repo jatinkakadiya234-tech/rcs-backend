@@ -335,8 +335,10 @@ webhookReceiver: async (req, res) => {
     const webhookData = req.body;
     console.log("📥 Jio Webhook Received:", JSON.stringify(webhookData, null, 2));
 
-    const messageId = webhookData?.entity?.messageId || webhookData?.messageId;
-    const eventType = webhookData?.entity?.eventType || webhookData?.status;
+    const messageId = webhookData?.entity?.messageId || webhookData?.metaData?.messageId;
+    const eventType = webhookData?.entity?.eventType || webhookData?.entityType;
+
+   
     
     if (messageId) {
       const message = await Message.findOne({ "results.messageId": messageId });
@@ -348,6 +350,12 @@ webhookReceiver: async (req, res) => {
           message.results[resultIndex].messaestatus = eventType;
           message.results[resultIndex].error = webhookData?.entity?.error || (eventType === "SEND_MESSAGE_FAILURE");
           message.results[resultIndex].errorMessage = webhookData?.entity?.error?.message || null;
+          
+          if(eventType === "USER_MESSAGE"){
+            message.results[resultIndex].userReplay = webhookData?.entity?.text || null;
+            message.results[resultIndex].entityType = webhookData?.entityType || null;
+            message.results[resultIndex].suggestionResponse = webhookData?.entity?.suggestionResponse || null;
+          }
           
           // If message failed and wasn't already failed, refund user
           if (eventType === "SEND_MESSAGE_FAILURE" && oldStatus !== "SEND_MESSAGE_FAILURE") {

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+
 const MessageSchema = new mongoose.Schema({
   type: {
     type: String,
@@ -29,6 +30,9 @@ const MessageSchema = new mongoose.Schema({
       error: { type: mongoose.Schema.Types.Mixed },
       messaestatus: String,
       errorMessage: String,
+      userReplay:String,
+      entityType: String,
+      suggestionResponse: { type: mongoose.Schema.Types.Mixed }
       
     },
   ],
