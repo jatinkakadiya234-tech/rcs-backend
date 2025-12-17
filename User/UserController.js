@@ -37,7 +37,7 @@ const fetchJioToken = async (userId) => {
   return newToken;
 };
 
-// --- Check RCS capability ---
+// --- Check RCS capability for single number ---
 const checkRcsCapability = async (phoneNumber, token) => {
   if (!phoneNumber || !token) return false;
 
@@ -55,6 +55,7 @@ const checkRcsCapability = async (phoneNumber, token) => {
       },
       timeout: 10000,
     });
+    console.log("single number API");
     return res.data || false;
   } catch (err) {
     console.error(
@@ -64,6 +65,34 @@ const checkRcsCapability = async (phoneNumber, token) => {
     return false;
   }
 };
+
+// --- Check RCS capability for multiple numbers (bulk) ---
+const checkBulkCapability = async (phoneNumbers, token) => {
+  if (!phoneNumbers || !Array.isArray(phoneNumbers) || !token) {
+    return null;
+  }
+
+  const url = `https://api.businessmessaging.jio.com/v1/messaging/usersBatchGet`;
+  
+  try {
+    const res = await axios.post(url, {
+      phoneNumbers
+    }, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 10000,
+    });
+    console.log("bulk API");
+    return res.data || null;
+  } catch (error) {
+    console.error("Error in bulk check:", error.response?.data || error.message);
+    return null;
+  }
+};
+
+
 
 // --- ✅ Send Plain Text SMS (as per Jio v1.8) ---
 const sendJioSms = async (phoneNumber, content, token, type) => {
@@ -311,7 +340,6 @@ webhookReceiver: async (req, res) => {
     
     if (messageId) {
       const message = await Message.findOne({ "results.messageId": messageId });
-      console.log(message);
       
       if (message) {
         const resultIndex = message.results.findIndex(r => r.messageId === messageId);
@@ -319,6 +347,7 @@ webhookReceiver: async (req, res) => {
           const oldStatus = message.results[resultIndex].messaestatus;
           message.results[resultIndex].messaestatus = eventType;
           message.results[resultIndex].error = webhookData?.entity?.error || (eventType === "SEND_MESSAGE_FAILURE");
+          message.results[resultIndex].errorMessage = webhookData?.entity?.error?.message || null;
           
           // If message failed and wasn't already failed, refund user
           if (eventType === "SEND_MESSAGE_FAILURE" && oldStatus !== "SEND_MESSAGE_FAILURE") {
@@ -584,22 +613,54 @@ webhookReceiver: async (req, res) => {
 
   checkAvablityNumber: async (req, res) => {
     try {
-      const { phoneNumbers } = req.body;
+      let { phoneNumbers, userId } = req.body;
+      
       if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0)
         return res
           .status(400)
           .send({ success: false, message: "phoneNumbers array required" });
 
-      // Get userId from request (you'll need to add auth middleware)
-      const { userId } = req.body; // or get from auth middleware
-      console.log("userId:", userId);
-      const jioToken = await fetchJioToken(userId);
-      const results = {};
-      for (const phone of phoneNumbers) {
-        results[phone] = await checkRcsCapability(phone, jioToken);
-      }
+      if (!userId)
+        return res
+          .status(400)
+          .send({ success: false, message: "userId required" });
 
-      res.status(200).send({ success: true, rcsMessaging: results });
+      // Remove duplicates
+      const originalCount = phoneNumbers.length;
+      phoneNumbers = [...new Set(phoneNumbers)];
+      const duplicatesRemoved = originalCount - phoneNumbers.length;
+      
+      console.log(`Original: ${originalCount}, After removing duplicates: ${phoneNumbers.length}, Removed: ${duplicatesRemoved}`);
+
+      const jioToken = await fetchJioToken(userId);
+      
+      // Use bulk API only if 500+ numbers, otherwise check individually
+      if (phoneNumbers.length >= 500) {
+        console.log(`Using bulk API for ${phoneNumbers.length} numbers`);
+        const bulkResults = await checkBulkCapability(phoneNumbers, jioToken);
+        return res.status(200).send({ 
+          success: true, 
+          rcsMessaging: bulkResults,
+          duplicatesRemoved 
+        });
+      } else {
+        console.log(`Checking ${phoneNumbers.length} numbers individually`);
+        const results = await Promise.all(
+          phoneNumbers.map(phone => checkRcsCapability(phone, jioToken))
+        );
+        
+        const reachableUsers = phoneNumbers.filter((phone, index) => results[index]);
+        
+        return res.status(200).send({ 
+          success: true, 
+          rcsMessaging: { 
+            reachableUsers,
+            totalRandomSampleUserCount: phoneNumbers.length,
+            reachableRandomSampleUserCount: reachableUsers.length
+          },
+          duplicatesRemoved
+        });
+      }
     } catch (err) {
       res
         .status(500)

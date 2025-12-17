@@ -28,6 +28,8 @@ const MessageSchema = new mongoose.Schema({
       result: String,
       error: { type: mongoose.Schema.Types.Mixed },
       messaestatus: String,
+      errorMessage: String,
+      
     },
   ],
   successCount: { type: Number, default: 0 },
