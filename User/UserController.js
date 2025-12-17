@@ -803,6 +803,11 @@ webhookReceiver: async (req, res) => {
           .status(400)
           .send({ success: false, message: "Missing required fields" });
       }
+      if( !note){
+        return res
+        .status(400)
+        .send({ success: false, message: "Note is required" });
+      }
 
       const request = await WalletRequest.findById(requestId);
       if (!request) {
@@ -859,6 +864,7 @@ webhookReceiver: async (req, res) => {
           .send({ success: false, message: "Missing required fields" });
       }
 
+
       const request = await WalletRequest.findById(requestId);
       if (!request) {
         return res
@@ -906,15 +912,44 @@ webhookReceiver: async (req, res) => {
         jioSecret,
         companyname,
       } = req.body;
+      
       if (!name || !email || !password || !phone || !companyname) {
-        return res.status(400).send({ message: "All fields are required" });
+        return res.status(400).send({ success: false, message: "All fields are required" });
+      }
+
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).send({ success: false, message: "Invalid email format" });
+      }
+
+      // Phone validation (10 digits)
+      const phoneRegex = /^[0-9]{10}$/;
+      if (!phoneRegex.test(phone.toString())) {
+        return res.status(400).send({ success: false, message: "Phone must be 10 digits" });
+      }
+
+      // Password validation (minimum 6 characters)
+      if (password.length < 6) {
+        return res.status(400).send({ success: false, message: "Password must be at least 6 characters" });
       }
 
       const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
       if (existingUser) {
-        return res
-          .status(400)
-          .send({ message: "Email or Phone already exists" });
+        return res.status(400).send({ success: false, message: "Email or Phone already exists" });
+      }
+       
+      if (jioId && !jioSecret) {
+        return res.status(400).send({ success: false, message: "Jio Secret is required when Jio ID is provided" });
+      }
+      if(!companyname){
+        return res.status(400).send({ success: false, message: "Company Name is required" });
+      }
+      if(!role){
+        return res.status(400).send({ success: false, message: "Role is required" });
+      }
+      if(!password){
+        return res.status(400).send({ success: false, message: "Password is required" });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -935,9 +970,7 @@ webhookReceiver: async (req, res) => {
         user: { ...newUser.toObject(), password: undefined },
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({ message: "Internal server error", error: err.message });
+      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
     }
   },
 
