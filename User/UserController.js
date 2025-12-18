@@ -47,7 +47,7 @@ const fetchJioToken = async (userId) => {
   const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${jioid}&client_secret=${jiosecret}&scope=read`;
 
   const response = await axios.get(tokenUrl);
-  console.log(response);
+
   const newToken = response.data.access_token;
 
   // console.log(response);
