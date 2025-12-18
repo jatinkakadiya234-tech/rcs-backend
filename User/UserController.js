@@ -13,27 +13,51 @@ import Transaction from "../Transaction/TransactionModel.js";
 import mongoose from "mongoose";
 dotenv.config();
 
-// --- Token cache ---
-let cachedJioToken = null;
-let tokenExpiry = null;
+// --- Token cache (per user) ---
+let tokenCache = new Map(); // { userId: { token, expiry } }
 
 // --- Fetch Jio OAuth Token with user credentials ---
 const fetchJioToken = async (userId) => {
   const now = Date.now();
-  if (cachedJioToken && tokenExpiry && now < tokenExpiry) return cachedJioToken;
+  
+  // Check if token exists in cache for this specific user
+  if (tokenCache.has(userId)) {
+    const cached = tokenCache.get(userId);
+    if (now < cached.expiry) {
+      console.log(`Using cached token for user ${userId}`);
+      return cached.token;
+    } else {
+      // Remove expired token
+      tokenCache.delete(userId);
+    }
+  }
 
   const user = await User.findById(userId);
   if (!user || !user.jioId || !user.jioSecret) {
     throw new Error("Jio credentials not found in user profile");
   }
+  // console.log(user.jioId, user.jioSecret, "user jio credentials");
+  // console.log(user);
+  let  jioid = user.jioId.toString().trim();
+  let jiosecret = user.jioSecret.toString().trim();
 
-  const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${user.jioId}&client_secret=${user.jioSecret}&scope=read`;
+  console.log(jioid,"jio id-------------");
+  console.log(jiosecret,"jio secret-------------");
+
+  const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${jioid}&client_secret=${jiosecret}&scope=read`;
 
   const response = await axios.get(tokenUrl);
+  console.log(response);
   const newToken = response.data.access_token;
 
-  cachedJioToken = newToken;
-  tokenExpiry = now + 60 * 60 * 1000; // 1 hour
+  // console.log(response);
+
+  // Store token in cache for this specific user with 1 hour expiry
+  tokenCache.set(userId, {
+    token: newToken,
+    expiry: now + 60 * 60 * 1000 // 1 hour
+  });
+  
   return newToken;
 };
 
@@ -114,7 +138,7 @@ const sendJioSms = async (phoneNumber, content, token, type) => {
       content: content,
     };
 
-    console.log(`📤 Sending message to ${formattedPhone} with ID: ${messageId}`);
+    // console.log(`📤 Sending message to ${formattedPhone} with ID: ${messageId}`);
     
     const response = await axios.post(url, payload, {
       headers: {
@@ -124,11 +148,11 @@ const sendJioSms = async (phoneNumber, content, token, type) => {
       timeout: 10000,
     });
 
-    console.log(`✅ Message sent successfully to ${formattedPhone}:`, {
-      status: response.status,
-      messageId,
-      timestamp: new Date().toISOString()
-    });
+    // console.log(`✅ Message sent successfully to ${formattedPhone}:`, {
+    //   status: response.status,
+    //   messageId,
+    //   timestamp: new Date().toISOString()
+    // });
 
     return {
       phone: formattedPhone,
@@ -405,6 +429,15 @@ webhookReceiver: async (req, res) => {
           .status(400)
           .send({ success: false, message: "Missing required fields" });
       }
+
+      let allredyCampaign = await Message.findOne({ CampaignName: campaignName, userId: userId });
+
+      if (allredyCampaign) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Campaign name already exists. Please choose a different name." });
+      }
+
 
       // Check user wallet balance
       const user = await User.findById(userId);

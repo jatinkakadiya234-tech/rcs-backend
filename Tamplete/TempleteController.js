@@ -2,8 +2,15 @@ import Template from "./TampletModel.js";
 // 📌 Create Template
 export const createTemplate = async (req, res) => {
   try {
+    console.log(req.body);
+    if(!req.body.name || !req.body.userId) {
+      return  res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+    let allredyname = await Template.findOne({ name: req.body.name, userId: req.body.userId });
+    if (allredyname) {
+      return res.status(400).json({ success: false, message: "Template name already exists. Please choose a different name." });
+    }
     const template = new Template(req.body);
-
     await template.save();
     res.status(201).json({
       success: true,
