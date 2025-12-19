@@ -30,13 +30,11 @@ const MessageSchema = new mongoose.Schema({
       error: { type: mongoose.Schema.Types.Mixed },
       messaestatus: String,
       errorMessage: String,
-      userReplay: String,
-      userCliked: { type: Number, default: 0 },
+      userReplay: Number,
+      userCliked: Number,
       entityType: String,
-      suggestionResponse: { type: mongoose.Schema.Types.Mixed },
-      suggestionClickCount: { type: Number, default: 0 },
-      suggestionFirstClickAt: { type: Date },
-      suggestionLastClickAt: { type: Date }
+      suggestionResponse: [{ type: mongoose.Schema.Types.Mixed }]
+      
     },
   ],
   successCount: { type: Number, default: 0 },

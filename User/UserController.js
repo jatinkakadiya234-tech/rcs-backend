@@ -371,30 +371,29 @@ webhookReceiver: async (req, res) => {
       if (message) {
         const resultIndex = message.results.findIndex(r => r.messageId === orgMsgId);
         if (resultIndex !== -1) {
-          const currentResult = message.results[resultIndex];
-          const now = new Date();
+          message.results[resultIndex].userReplay = webhookData?.entity?.text || null;
+          message.results[resultIndex].entityType = webhookData?.entityType || null;
           
-          // Update user reply text
-          currentResult.userReplay = webhookData?.entity?.text || null;
-          currentResult.entityType = webhookData?.entityType || null;
-          
-          // Handle suggestion response clicks
+          // Handle suggestion response - track clicks
           if (webhookData?.entity?.suggestionResponse) {
-            currentResult.suggestionResponse = webhookData?.entity?.suggestionResponse;
-            
-            // Increment click count
-            currentResult.suggestionClickCount = (currentResult.suggestionClickCount || 0) + 1;
-            
-            // Set first click timestamp (only if not already set)
-            if (!currentResult.suggestionFirstClickAt) {
-              currentResult.suggestionFirstClickAt = now;
-              console.log(`🎯 First suggestion click recorded at ${now.toISOString()}`);
+            // If suggestionResponse is already stored, increment click count
+            if (message.results[resultIndex].userCliked > 0) {
+              message.results[resultIndex].userReplay += 1;
+              console.log(`📊 User clicked suggestion ${message.results[resultIndex].userReplay} time(s)`);
+            } else {
+              // First click
+              message.results[resultIndex].userCliked = 1;
+              console.log(`🎯 First suggestion click recorded`);
             }
             
-            // Always update last click timestamp
-            currentResult.suggestionLastClickAt = now;
-            
-            console.log(`📊 Suggestion clicked ${currentResult.suggestionClickCount} time(s) - Response:`, webhookData?.entity?.suggestionResponse);
+            // Store the suggestion response
+            if (!Array.isArray(message.results[resultIndex].suggestionResponse)) {
+              message.results[resultIndex].suggestionResponse = [];
+            }
+            message.results[resultIndex].suggestionResponse.push({
+              ...webhookData?.entity?.suggestionResponse,
+              clickedAt: new Date().toISOString()
+            });
           }
           
           await message.save();
