@@ -11,6 +11,7 @@ import Message from "../Message/MessageModel.js";
 import TransactionController from "../Transaction/TransactionController.js";
 import Transaction from "../Transaction/TransactionModel.js";
 import mongoose from "mongoose";
+import fs from "fs";
 dotenv.config();
 
 // --- Token cache (per user) ---
@@ -370,9 +371,31 @@ webhookReceiver: async (req, res) => {
       if (message) {
         const resultIndex = message.results.findIndex(r => r.messageId === orgMsgId);
         if (resultIndex !== -1) {
-          message.results[resultIndex].userReplay = webhookData?.entity?.text || null;
-          message.results[resultIndex].entityType = webhookData?.entityType || null;
-          message.results[resultIndex].suggestionResponse = webhookData?.entity?.suggestionResponse || null;
+          const currentResult = message.results[resultIndex];
+          const now = new Date();
+          
+          // Update user reply text
+          currentResult.userReplay = webhookData?.entity?.text || null;
+          currentResult.entityType = webhookData?.entityType || null;
+          
+          // Handle suggestion response clicks
+          if (webhookData?.entity?.suggestionResponse) {
+            currentResult.suggestionResponse = webhookData?.entity?.suggestionResponse;
+            
+            // Increment click count
+            currentResult.suggestionClickCount = (currentResult.suggestionClickCount || 0) + 1;
+            
+            // Set first click timestamp (only if not already set)
+            if (!currentResult.suggestionFirstClickAt) {
+              currentResult.suggestionFirstClickAt = now;
+              console.log(`🎯 First suggestion click recorded at ${now.toISOString()}`);
+            }
+            
+            // Always update last click timestamp
+            currentResult.suggestionLastClickAt = now;
+            
+            console.log(`📊 Suggestion clicked ${currentResult.suggestionClickCount} time(s) - Response:`, webhookData?.entity?.suggestionResponse);
+          }
           
           await message.save();
           console.log(`✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`);
@@ -737,6 +760,8 @@ webhookReceiver: async (req, res) => {
       let result = await cloudinary.uploader.upload(req.file.path, {
         folder: "rcs",
       });
+
+      await fs.unlinkSync(req.file.path);
 
       res.status(200).send({
         success: true,
