@@ -376,15 +376,9 @@ webhookReceiver: async (req, res) => {
           
           // Handle suggestion response - track clicks
           if (webhookData?.entity?.suggestionResponse) {
-            // If suggestionResponse is already stored, increment click count
-            if (message.results[resultIndex].userCliked > 0) {
-              message.results[resultIndex].userReplay += 1;
-              console.log(`📊 User clicked suggestion ${message.results[resultIndex].userReplay} time(s)`);
-            } else {
-              // First click
-              message.results[resultIndex].userCliked = 1;
-              console.log(`🎯 First suggestion click recorded`);
-            }
+            // Increment click count each time suggestion is clicked
+            message.results[resultIndex].userCliked = (message.results[resultIndex].userCliked || 0) + 1;
+            console.log(`🎯 Suggestion clicked ${message.results[resultIndex].userCliked} time(s)`);
             
             // Store the suggestion response
             if (!Array.isArray(message.results[resultIndex].suggestionResponse)) {
@@ -392,7 +386,8 @@ webhookReceiver: async (req, res) => {
             }
             message.results[resultIndex].suggestionResponse.push({
               ...webhookData?.entity?.suggestionResponse,
-              clickedAt: new Date().toISOString()
+              clickedAt: new Date().toISOString(),
+              clickNumber: message.results[resultIndex].userCliked
             });
           }
           
