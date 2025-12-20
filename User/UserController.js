@@ -436,6 +436,8 @@ const UserController = {
       const orgMsgId = webhookData?.metaData?.orgMsgId;
       const messageId = webhookData?.entity?.messageId;
 
+      console.log(webhookData);
+
       console.log(`🔍 Event: ${eventType}, MsgId: ${messageId || orgMsgId}`);
 
       if (eventType === "USER_MESSAGE" && orgMsgId) {
