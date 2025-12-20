@@ -433,110 +433,65 @@ const UserController = {
     try {
       const webhookData = req.body;
       console.log(
-        "📥 Jio Webhook Received:",
+        "📥 Webhook:",
         JSON.stringify(webhookData, null, 2)
       );
 
-      const eventType =
-        webhookData?.entity?.eventType || webhookData?.entityType;
+      const eventType = webhookData?.entity?.eventType || webhookData?.entityType;
       const orgMsgId = webhookData?.metaData?.orgMsgId;
-      const userPhoneNumber = webhookData?.userPhoneNumber;
+      const messageId = webhookData?.entity?.messageId;
 
-      // For USER_MESSAGE, use orgMsgId to find original message
+      console.log(`🔍 Event: ${eventType}, MsgId: ${messageId || orgMsgId}`);
+
       if (eventType === "USER_MESSAGE" && orgMsgId) {
-        const message = await Message.findOne({
-          "results.messageId": orgMsgId,
-        });
-
+        const message = await Message.findOne({ "results.messageId": orgMsgId });
         if (message) {
-          const resultIndex = message.results.findIndex(
-            (r) => r.messageId === orgMsgId
-          );
-          if (resultIndex !== -1) {
-            message.results[resultIndex].userReplay =
-              webhookData?.entity?.text || null;
-            message.results[resultIndex].entityType =
-              webhookData?.entityType || null;
-
-            // Handle suggestion response - track clicks
+          const idx = message.results.findIndex((r) => r.messageId === orgMsgId);
+          if (idx !== -1) {
+            message.results[idx].userReplay = webhookData?.entity?.text || null;
+            message.results[idx].entityType = webhookData?.entityType || null;
             if (webhookData?.entity?.suggestionResponse) {
-              // Increment click count each time suggestion is clicked
-              message.results[resultIndex].userCliked =
-                (message.results[resultIndex].userCliked || 0) + 1;
-              console.log(
-                `🎯 Suggestion clicked ${message.results[resultIndex].userCliked} time(s)`
-              );
-
-              // Store the suggestion response
-              if (
-                !Array.isArray(message.results[resultIndex].suggestionResponse)
-              ) {
-                message.results[resultIndex].suggestionResponse = [];
+              message.results[idx].userCliked = (message.results[idx].userCliked || 0) + 1;
+              if (!Array.isArray(message.results[idx].suggestionResponse)) {
+                message.results[idx].suggestionResponse = [];
               }
-              message.results[resultIndex].suggestionResponse.push({
+              message.results[idx].suggestionResponse.push({
                 ...webhookData?.entity?.suggestionResponse,
                 clickedAt: new Date().toISOString(),
-                clickNumber: message.results[resultIndex].userCliked,
+                clickNumber: message.results[idx].userCliked,
               });
             }
-
             await message.save();
-            console.log(
-              `✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`
-            );
+            console.log(`✅ User reply saved`);
           }
         }
-      } else {
-        // For other events, use entity.messageId
-        const messageId = webhookData?.entity?.messageId;
+      } else if (messageId) {
+        const message = await Message.findOne({ "results.messageId": messageId });
+        if (message) {
+          const idx = message.results.findIndex((r) => r.messageId === messageId);
+          if (idx !== -1) {
+            const oldStatus = message.results[idx].messaestatus;
+            message.results[idx].messaestatus = eventType;
+            message.results[idx].error = webhookData?.entity?.error || eventType === "SEND_MESSAGE_FAILURE";
+            message.results[idx].errorMessage = webhookData?.entity?.error?.message || null;
 
-        if (messageId) {
-          const message = await Message.findOne({
-            "results.messageId": messageId,
-          });
-
-          if (message) {
-            const resultIndex = message.results.findIndex(
-              (r) => r.messageId === messageId
-            );
-            if (resultIndex !== -1) {
-              const oldStatus = message.results[resultIndex].messaestatus;
-              message.results[resultIndex].messaestatus = eventType;
-              message.results[resultIndex].error =
-                webhookData?.entity?.error ||
-                eventType === "SEND_MESSAGE_FAILURE";
-              message.results[resultIndex].errorMessage =
-                webhookData?.entity?.error?.message || null;
-
-              // If message failed and wasn't already failed, refund user
-              if (
-                eventType === "SEND_MESSAGE_FAILURE" &&
-                oldStatus !== "SEND_MESSAGE_FAILURE"
-              ) {
-                await User.findByIdAndUpdate(message.userId, {
-                  $inc: { Wallet: 1 },
-                });
-                console.log(
-                  `💰 Refunded ₹1 to user ${message.userId} for failed message ${messageId}`
-                );
-              }
-
-              message.successCount = message.results.filter(
-                (r) =>
-                  r.messaestatus === "MESSAGE_DELIVERED" ||
-                  r.messaestatus === "MESSAGE_READ" ||
-                  r.messaestatus === "SEND_MESSAGE_SUCCESS"
-              ).length;
-              message.failedCount = message.results.filter(
-                (r) => r.messaestatus === "SEND_MESSAGE_FAILURE"
-              ).length;
-
-              await message.save();
-              console.log(
-                `✅ Updated message ${messageId} with status: ${eventType}`
-              );
+            if (eventType === "SEND_MESSAGE_FAILURE" && oldStatus !== "SEND_MESSAGE_FAILURE") {
+              await User.findByIdAndUpdate(message.userId, { $inc: { Wallet: 1 } });
+              console.log(`💰 Refunded ₹1`);
             }
+
+            message.successCount = message.results.filter(
+              (r) => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ" || r.messaestatus === "SEND_MESSAGE_SUCCESS"
+            ).length;
+            message.failedCount = message.results.filter((r) => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
+
+            await message.save();
+            console.log(`✅ Status updated: ${eventType}`);
+          } else {
+            console.log(`❌ MsgId not in results`);
           }
+        } else {
+          console.log(`❌ Message not found`);
         }
       }
 
