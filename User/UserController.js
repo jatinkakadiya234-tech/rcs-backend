@@ -432,11 +432,6 @@ const UserController = {
   webhookReceiver: async (req, res) => {
     try {
       const webhookData = req.body;
-      console.log(
-        "📥 Webhook:",
-        JSON.stringify(webhookData, null, 2)
-      );
-
       const eventType = webhookData?.entity?.eventType || webhookData?.entityType;
       const orgMsgId = webhookData?.metaData?.orgMsgId;
       const messageId = webhookData?.entity?.messageId;
@@ -461,6 +456,7 @@ const UserController = {
                 clickNumber: message.results[idx].userCliked,
               });
             }
+            message.markModified('results');
             await message.save();
             console.log(`✅ User reply saved`);
           }
@@ -485,8 +481,9 @@ const UserController = {
             ).length;
             message.failedCount = message.results.filter((r) => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
 
+            message.markModified('results');
             await message.save();
-            console.log(`✅ Status updated: ${eventType}`);
+            console.log(`✅ Status updated: ${eventType} | Success: ${message.successCount} | Failed: ${message.failedCount}`);
           } else {
             console.log(`❌ MsgId not in results`);
           }
