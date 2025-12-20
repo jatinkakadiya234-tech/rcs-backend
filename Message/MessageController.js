@@ -20,36 +20,40 @@ const MessageController = {
 
   getMessageReports: async (req, res) => {
     try {
-      const messages = await Message.find().sort({ createdAt: -1 });
-      
-      const totalMessages = messages.length;
-      const successfulMessages = messages.filter(m => 
-        m.results?.some(r => r.status === 201)
-      ).length;
-      const failedMessages = messages.filter(m => 
-        m.results?.every(r => r.status !== 201)
-      ).length;
+      const { page = 1, limit = 10 } = req.query;
+      const skip = (page - 1) * limit;
 
-      const messagesByType = messages.reduce((acc, msg) => {
-        const existing = acc.find(item => item._id === msg.type);
-        if (existing) {
-          existing.count++;
-        } else {
-          acc.push({ _id: msg.type, count: 1 });
-        }
-        return acc;
-      }, []);
+      const total = await Message.countDocuments();
+      const messages = await Message.find()
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit))
+        .skip(skip);
+      
+      const successfulMessages = await Message.countDocuments({
+        "results.status": 201
+      });
+      const failedMessages = await Message.countDocuments({
+        "results.status": { $ne: 201 }
+      });
+
+      const messagesByType = await Message.aggregate([
+        { $group: { _id: "$type", count: { $sum: 1 } } }
+      ]);
 
       res.status(200).send({
         success: true,
         report: {
-          totalMessages,
+          totalMessages: total,
           successfulMessages,
           failedMessages,
           messagesByType,
-          recentMessages: messages.slice(0, 10),
-          campaignName:messages.map(m=>m.CampaignName)
-          
+          messages,
+        },
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit),
         }
       });
     } catch (err) {
