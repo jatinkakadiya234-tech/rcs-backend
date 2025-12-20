@@ -13,6 +13,7 @@ import Transaction from "../Transaction/TransactionModel.js";
 import mongoose from "mongoose";
 import fs from "fs";
 dotenv.config();
+import { addToRetryQueue, processRetryQueue } from "../utils/retryQueue.js";
 
 // --- Token cache (per user) ---
 let tokenCache = new Map(); // { userId: { token, expiry } }
@@ -20,7 +21,7 @@ let tokenCache = new Map(); // { userId: { token, expiry } }
 // --- Fetch Jio OAuth Token with user credentials ---
 const fetchJioToken = async (userId) => {
   const now = Date.now();
-  
+
   // Check if token exists in cache for this specific user
   if (tokenCache.has(userId)) {
     const cached = tokenCache.get(userId);
@@ -39,11 +40,11 @@ const fetchJioToken = async (userId) => {
   }
   // console.log(user.jioId, user.jioSecret, "user jio credentials");
   // console.log(user);
-  let  jioid = user.jioId.toString().trim();
+  let jioid = user.jioId.toString().trim();
   let jiosecret = user.jioSecret.toString().trim();
 
-  console.log(jioid,"jio id-------------");
-  console.log(jiosecret,"jio secret-------------");
+  console.log(jioid, "jio id-------------");
+  console.log(jiosecret, "jio secret-------------");
 
   const tokenUrl = `https://tgs.businessmessaging.jio.com/v1/oauth/token?grant_type=client_credentials&client_id=${jioid}&client_secret=${jiosecret}&scope=read`;
 
@@ -56,9 +57,9 @@ const fetchJioToken = async (userId) => {
   // Store token in cache for this specific user with 1 hour expiry
   tokenCache.set(userId, {
     token: newToken,
-    expiry: now + 60 * 60 * 1000 // 1 hour
+    expiry: now + 60 * 60 * 1000, // 1 hour
   });
-  
+
   return newToken;
 };
 
@@ -98,49 +99,114 @@ const checkBulkCapability = async (phoneNumbers, token) => {
   }
 
   const url = `https://api.businessmessaging.jio.com/v1/messaging/usersBatchGet`;
-  
+
   try {
-    const res = await axios.post(url, {
-      phoneNumbers
-    }, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    const res = await axios.post(
+      url,
+      {
+        phoneNumbers,
       },
-      timeout: 10000,
-    });
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      }
+    );
     console.log("bulk API");
     return res.data || null;
   } catch (error) {
-    console.error("Error in bulk check:", error.response?.data || error.message);
+    console.error(
+      "Error in bulk check:",
+      error.response?.data || error.message
+    );
     return null;
   }
 };
 
-
-
 // --- ✅ Send Plain Text SMS (as per Jio v1.8) ---
+
+// const sendJioSms = async (phoneNumber, content, token, type) => {
+//   try {
+//     // 🧹 Format phone number
+//     let formattedPhone = phoneNumber
+//       .toString()
+//       .trim()
+//       .replace(/[^0-9+]/g, "");
+//     if (!formattedPhone.startsWith("+91"))
+//       formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
+
+//     const messageId = `msg_${uuidv4()}`;
+//     const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
+
+//     // ✅ Official payload structure (from Jio docs)
+//     const payload = {
+//       botId: process.env.JIO_ASSISTANT_ID,
+//       content: content,
+//     };
+
+//     // console.log(`📤 Sending message to ${formattedPhone} with ID: ${messageId}`);
+
+//     const response = await axios.post(url, payload, {
+//       headers: {
+//         Authorization: `Bearer ${token}`,
+//         "Content-Type": "application/json",
+//       },
+//       timeout: 10000,
+//     });
+
+//     // console.log(`✅ Message sent successfully to ${formattedPhone}:`, {
+//     //   status: response.status,
+//     //   messageId,
+//     //   timestamp: new Date().toISOString()
+//     // });
+
+//     return {
+//       phone: formattedPhone,
+//       status: response.status,
+//       response: response.data,
+//       messageId,
+//       timestamp: new Date().toISOString(),
+//       result: "Message Sent Successfully",
+//       type: type,
+//       statusText: response.statusText,
+//       _eventsCount: response.headers["x-events-count"] || null,
+//       _messageStatus: response.headers["x-message-status"] || null,
+//     };
+//   } catch (error) {
+//     console.error(`❌ Jio API Error for ${phoneNumber}:`, error.response?.data || error.message);
+//     return {
+//       phone: phoneNumber,
+//       status: error.response?.status || 500,
+//       response: { error: error.response?.data || error.message },
+//       error: true,
+//       timestamp: new Date().toISOString(),
+//     };
+//   }
+// };
+
+
+
 const sendJioSms = async (phoneNumber, content, token, type) => {
   try {
-    // 🧹 Format phone number
     let formattedPhone = phoneNumber
       .toString()
       .trim()
       .replace(/[^0-9+]/g, "");
-    if (!formattedPhone.startsWith("+91"))
+
+    if (!formattedPhone.startsWith("+91")) {
       formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
+    }
 
     const messageId = `msg_${uuidv4()}`;
     const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
 
-    // ✅ Official payload structure (from Jio docs)
     const payload = {
       botId: process.env.JIO_ASSISTANT_ID,
       content: content,
     };
 
-    // console.log(`📤 Sending message to ${formattedPhone} with ID: ${messageId}`);
-    
     const response = await axios.post(url, payload, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -149,36 +215,41 @@ const sendJioSms = async (phoneNumber, content, token, type) => {
       timeout: 10000,
     });
 
-    // console.log(`✅ Message sent successfully to ${formattedPhone}:`, {
-    //   status: response.status,
-    //   messageId,
-    //   timestamp: new Date().toISOString()
-    // });
-
     return {
       phone: formattedPhone,
       status: response.status,
       response: response.data,
       messageId,
-      timestamp: new Date().toISOString(),
       result: "Message Sent Successfully",
-      type: type,
-      statusText: response.statusText,
-      _eventsCount: response.headers["x-events-count"] || null,
-      _messageStatus: response.headers["x-message-status"] || null,
+      type,
+      timestamp: new Date().toISOString(),
     };
   } catch (error) {
-    console.error(`❌ Jio API Error for ${phoneNumber}:`, error.response?.data || error.message);
+    const status = error.response?.status || 500;
+
+    if (status === 500) {
+      addToRetryQueue(phoneNumber, content, token, type);
+      return {
+        phone: phoneNumber,
+        status: 202,
+        message: "Queued for retry",
+        type,
+      };
+    }
+
     return {
       phone: phoneNumber,
-      status: error.response?.status || 500,
-      response: { error: error.response?.data || error.message },
-      error: true,
-      timestamp: new Date().toISOString(),
+      status: status,
+      message: error.response?.data || error.message,
+      type,
     };
   }
 };
 
+setInterval(() => {
+  console.log("⏰ Background retry queue check triggered...");
+  processRetryQueue(sendJioSms);
+}, 30000);
 
 
 // --- Controller Object ---
@@ -316,13 +387,15 @@ const UserController = {
   //       .send({ message: "Internal server error", error: err.message });
   //   }
   // },
-updateProfile: async (req, res) => {
+  updateProfile: async (req, res) => {
     try {
       const { userId } = req.params;
       const { name, email, phone, companyname } = req.body;
 
       if (!userId) {
-        return res.status(400).send({ success: false, message: "User ID is required" });
+        return res
+          .status(400)
+          .send({ success: false, message: "User ID is required" });
       }
 
       const updateData = {};
@@ -331,130 +404,173 @@ updateProfile: async (req, res) => {
       if (phone) updateData.phone = phone;
       if (companyname) updateData.companyname = companyname;
 
-      const updatedUser = await User.findByIdAndUpdate(
-        userId,
-        updateData,
-        { new: true, select: '-password' }
-      );
+      const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+        new: true,
+        select: "-password",
+      });
 
       if (!updatedUser) {
-        return res.status(404).send({ success: false, message: "User not found" });
+        return res
+          .status(404)
+          .send({ success: false, message: "User not found" });
       }
 
       res.status(200).send({
         success: true,
         message: "Profile updated successfully",
-        user: updatedUser
+        user: updatedUser,
       });
     } catch (error) {
       res.status(500).send({
         success: false,
         message: "Internal server error",
-        error: error.message
+        error: error.message,
       });
     }
   },
 
-webhookReceiver: async (req, res) => {
-  try {
-    const webhookData = req.body;
-    console.log("📥 Jio Webhook Received:", JSON.stringify(webhookData, null, 2));
+  webhookReceiver: async (req, res) => {
+    try {
+      const webhookData = req.body;
+      console.log(
+        "📥 Jio Webhook Received:",
+        JSON.stringify(webhookData, null, 2)
+      );
 
-    const eventType = webhookData?.entity?.eventType || webhookData?.entityType;
-    const orgMsgId = webhookData?.metaData?.orgMsgId;
-    const userPhoneNumber = webhookData?.userPhoneNumber;
-    
-    // For USER_MESSAGE, use orgMsgId to find original message
-    if (eventType === "USER_MESSAGE" && orgMsgId) {
-      const message = await Message.findOne({ "results.messageId": orgMsgId });
-      
-      if (message) {
-        const resultIndex = message.results.findIndex(r => r.messageId === orgMsgId);
-        if (resultIndex !== -1) {
-          message.results[resultIndex].userReplay = webhookData?.entity?.text || null;
-          message.results[resultIndex].entityType = webhookData?.entityType || null;
-          
-          // Handle suggestion response - track clicks
-          if (webhookData?.entity?.suggestionResponse) {
-            // Increment click count each time suggestion is clicked
-            message.results[resultIndex].userCliked = (message.results[resultIndex].userCliked || 0) + 1;
-            console.log(`🎯 Suggestion clicked ${message.results[resultIndex].userCliked} time(s)`);
-            
-            // Store the suggestion response
-            if (!Array.isArray(message.results[resultIndex].suggestionResponse)) {
-              message.results[resultIndex].suggestionResponse = [];
-            }
-            message.results[resultIndex].suggestionResponse.push({
-              ...webhookData?.entity?.suggestionResponse,
-              clickedAt: new Date().toISOString(),
-              clickNumber: message.results[resultIndex].userCliked
-            });
-          }
-          
-          await message.save();
-          console.log(`✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`);
-        }
-      }
-    } else {
-      // For other events, use entity.messageId
-      const messageId = webhookData?.entity?.messageId;
-      
-      if (messageId) {
-        const message = await Message.findOne({ "results.messageId": messageId });
-        
+      const eventType =
+        webhookData?.entity?.eventType || webhookData?.entityType;
+      const orgMsgId = webhookData?.metaData?.orgMsgId;
+      const userPhoneNumber = webhookData?.userPhoneNumber;
+
+      // For USER_MESSAGE, use orgMsgId to find original message
+      if (eventType === "USER_MESSAGE" && orgMsgId) {
+        const message = await Message.findOne({
+          "results.messageId": orgMsgId,
+        });
+
         if (message) {
-          const resultIndex = message.results.findIndex(r => r.messageId === messageId);
+          const resultIndex = message.results.findIndex(
+            (r) => r.messageId === orgMsgId
+          );
           if (resultIndex !== -1) {
-            const oldStatus = message.results[resultIndex].messaestatus;
-            message.results[resultIndex].messaestatus = eventType;
-            message.results[resultIndex].error = webhookData?.entity?.error || (eventType === "SEND_MESSAGE_FAILURE");
-            message.results[resultIndex].errorMessage = webhookData?.entity?.error?.message || null;
-            
-            // If message failed and wasn't already failed, refund user
-            if (eventType === "SEND_MESSAGE_FAILURE" && oldStatus !== "SEND_MESSAGE_FAILURE") {
-              await User.findByIdAndUpdate(message.userId, {
-                $inc: { Wallet: 1 }
+            message.results[resultIndex].userReplay =
+              webhookData?.entity?.text || null;
+            message.results[resultIndex].entityType =
+              webhookData?.entityType || null;
+
+            // Handle suggestion response - track clicks
+            if (webhookData?.entity?.suggestionResponse) {
+              // Increment click count each time suggestion is clicked
+              message.results[resultIndex].userCliked =
+                (message.results[resultIndex].userCliked || 0) + 1;
+              console.log(
+                `🎯 Suggestion clicked ${message.results[resultIndex].userCliked} time(s)`
+              );
+
+              // Store the suggestion response
+              if (
+                !Array.isArray(message.results[resultIndex].suggestionResponse)
+              ) {
+                message.results[resultIndex].suggestionResponse = [];
+              }
+              message.results[resultIndex].suggestionResponse.push({
+                ...webhookData?.entity?.suggestionResponse,
+                clickedAt: new Date().toISOString(),
+                clickNumber: message.results[resultIndex].userCliked,
               });
-              console.log(`💰 Refunded ₹1 to user ${message.userId} for failed message ${messageId}`);
             }
-            
-            message.successCount = message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ" || r.messaestatus==="SEND_MESSAGE_SUCCESS").length;
-            message.failedCount = message.results.filter(r => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
-          
+
             await message.save();
-            console.log(`✅ Updated message ${messageId} with status: ${eventType}`);
+            console.log(
+              `✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`
+            );
+          }
+        }
+      } else {
+        // For other events, use entity.messageId
+        const messageId = webhookData?.entity?.messageId;
+
+        if (messageId) {
+          const message = await Message.findOne({
+            "results.messageId": messageId,
+          });
+
+          if (message) {
+            const resultIndex = message.results.findIndex(
+              (r) => r.messageId === messageId
+            );
+            if (resultIndex !== -1) {
+              const oldStatus = message.results[resultIndex].messaestatus;
+              message.results[resultIndex].messaestatus = eventType;
+              message.results[resultIndex].error =
+                webhookData?.entity?.error ||
+                eventType === "SEND_MESSAGE_FAILURE";
+              message.results[resultIndex].errorMessage =
+                webhookData?.entity?.error?.message || null;
+
+              // If message failed and wasn't already failed, refund user
+              if (
+                eventType === "SEND_MESSAGE_FAILURE" &&
+                oldStatus !== "SEND_MESSAGE_FAILURE"
+              ) {
+                await User.findByIdAndUpdate(message.userId, {
+                  $inc: { Wallet: 1 },
+                });
+                console.log(
+                  `💰 Refunded ₹1 to user ${message.userId} for failed message ${messageId}`
+                );
+              }
+
+              message.successCount = message.results.filter(
+                (r) =>
+                  r.messaestatus === "MESSAGE_DELIVERED" ||
+                  r.messaestatus === "MESSAGE_READ" ||
+                  r.messaestatus === "SEND_MESSAGE_SUCCESS"
+              ).length;
+              message.failedCount = message.results.filter(
+                (r) => r.messaestatus === "SEND_MESSAGE_FAILURE"
+              ).length;
+
+              await message.save();
+              console.log(
+                `✅ Updated message ${messageId} with status: ${eventType}`
+              );
+            }
           }
         }
       }
+
+      res.status(200).json({ success: true, message: "Webhook received" });
+    } catch (error) {
+      console.error("❌ Webhook Error:", error);
+      res.status(500).json({ success: false, error: error.message });
     }
-
-    res.status(200).json({ success: true, message: "Webhook received" });
-  } catch (error) {
-    console.error("❌ Webhook Error:", error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-},
-
+  },
 
   sendMessage: async (req, res) => {
     try {
       const { type, content, phoneNumbers, userId, campaignName } = req.body;
- 
-      
+
       if (!type || !content || !phoneNumbers || !userId || !campaignName) {
         return res
           .status(400)
           .send({ success: false, message: "Missing required fields" });
       }
 
-      let allredyCampaign = await Message.findOne({ CampaignName: campaignName, userId: userId });
+      let allredyCampaign = await Message.findOne({
+        CampaignName: campaignName,
+        userId: userId,
+      });
 
       if (allredyCampaign) {
         return res
           .status(400)
-          .send({ success: false, message: "Campaign name already exists. Please choose a different name." });
+          .send({
+            success: false,
+            message:
+              "Campaign name already exists. Please choose a different name.",
+          });
       }
-
 
       // Check user wallet balance
       const user = await User.findById(userId);
@@ -480,7 +596,7 @@ webhookReceiver: async (req, res) => {
       const token = await fetchJioToken(userId);
       if (type === "text") {
         let results = await Promise.all(
-          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type))
+          phoneNumbers.map((phone) => sendJioSms(phone, content, token, type ))
         );
 
         // Deduct wallet balance
@@ -672,20 +788,18 @@ webhookReceiver: async (req, res) => {
         });
       }
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
   checkAvablityNumber: async (req, res) => {
     try {
       let { phoneNumbers, userId } = req.body;
-      
+
       if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0)
         return res
           .status(400)
@@ -700,46 +814,48 @@ webhookReceiver: async (req, res) => {
       const originalCount = phoneNumbers.length;
       phoneNumbers = [...new Set(phoneNumbers)];
       const duplicatesRemoved = originalCount - phoneNumbers.length;
-      
-      console.log(`Original: ${originalCount}, After removing duplicates: ${phoneNumbers.length}, Removed: ${duplicatesRemoved}`);
+
+      console.log(
+        `Original: ${originalCount}, After removing duplicates: ${phoneNumbers.length}, Removed: ${duplicatesRemoved}`
+      );
 
       const jioToken = await fetchJioToken(userId);
-      
+
       // Use bulk API only if 500+ numbers, otherwise check individually
       if (phoneNumbers.length >= 500) {
         console.log(`Using bulk API for ${phoneNumbers.length} numbers`);
         const bulkResults = await checkBulkCapability(phoneNumbers, jioToken);
-        return res.status(200).send({ 
-          success: true, 
+        return res.status(200).send({
+          success: true,
           rcsMessaging: bulkResults,
-          duplicatesRemoved 
+          duplicatesRemoved,
         });
       } else {
         console.log(`Checking ${phoneNumbers.length} numbers individually`);
         const results = await Promise.all(
-          phoneNumbers.map(phone => checkRcsCapability(phone, jioToken))
+          phoneNumbers.map((phone) => checkRcsCapability(phone, jioToken))
         );
-        
-        const reachableUsers = phoneNumbers.filter((phone, index) => results[index]);
-        
-        return res.status(200).send({ 
-          success: true, 
-          rcsMessaging: { 
+
+        const reachableUsers = phoneNumbers.filter(
+          (phone, index) => results[index]
+        );
+
+        return res.status(200).send({
+          success: true,
+          rcsMessaging: {
             reachableUsers,
             totalRandomSampleUserCount: phoneNumbers.length,
-            reachableRandomSampleUserCount: reachableUsers.length
+            reachableRandomSampleUserCount: reachableUsers.length,
           },
-          duplicatesRemoved
+          duplicatesRemoved,
         });
       }
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -800,13 +916,11 @@ webhookReceiver: async (req, res) => {
         data: walletRequest,
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -815,13 +929,11 @@ webhookReceiver: async (req, res) => {
       const users = await User.find({ role: { $ne: "admin" } }, "-password");
       res.status(200).send({ success: true, users });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -833,13 +945,11 @@ webhookReceiver: async (req, res) => {
         .sort({ requestedAt: -1 });
       res.status(200).send({ success: true, requests });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -855,10 +965,10 @@ webhookReceiver: async (req, res) => {
           .status(400)
           .send({ success: false, message: "Missing required fields" });
       }
-      if( !note){
+      if (!note) {
         return res
-        .status(400)
-        .send({ success: false, message: "Note is required" });
+          .status(400)
+          .send({ success: false, message: "Note is required" });
       }
 
       const request = await WalletRequest.findById(requestId);
@@ -916,7 +1026,6 @@ webhookReceiver: async (req, res) => {
           .send({ success: false, message: "Missing required fields" });
       }
 
-
       const request = await WalletRequest.findById(requestId);
       if (!request) {
         return res
@@ -942,13 +1051,11 @@ webhookReceiver: async (req, res) => {
         data: request,
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -964,44 +1071,68 @@ webhookReceiver: async (req, res) => {
         jioSecret,
         companyname,
       } = req.body;
-      
+
       if (!name || !email || !password || !phone || !companyname) {
-        return res.status(400).send({ success: false, message: "All fields are required" });
+        return res
+          .status(400)
+          .send({ success: false, message: "All fields are required" });
       }
 
       // Email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res.status(400).send({ success: false, message: "Invalid email format" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Invalid email format" });
       }
 
       // Phone validation (10 digits)
       const phoneRegex = /^[0-9]{10}$/;
       if (!phoneRegex.test(phone.toString())) {
-        return res.status(400).send({ success: false, message: "Phone must be 10 digits" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Phone must be 10 digits" });
       }
 
       // Password validation (minimum 6 characters)
       if (password.length < 6) {
-        return res.status(400).send({ success: false, message: "Password must be at least 6 characters" });
+        return res
+          .status(400)
+          .send({
+            success: false,
+            message: "Password must be at least 6 characters",
+          });
       }
 
       const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
       if (existingUser) {
-        return res.status(400).send({ success: false, message: "Email or Phone already exists" });
+        return res
+          .status(400)
+          .send({ success: false, message: "Email or Phone already exists" });
       }
-       
+
       if (jioId && !jioSecret) {
-        return res.status(400).send({ success: false, message: "Jio Secret is required when Jio ID is provided" });
+        return res
+          .status(400)
+          .send({
+            success: false,
+            message: "Jio Secret is required when Jio ID is provided",
+          });
       }
-      if(!companyname){
-        return res.status(400).send({ success: false, message: "Company Name is required" });
+      if (!companyname) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Company Name is required" });
       }
-      if(!role){
-        return res.status(400).send({ success: false, message: "Role is required" });
+      if (!role) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Role is required" });
       }
-      if(!password){
-        return res.status(400).send({ success: false, message: "Password is required" });
+      if (!password) {
+        return res
+          .status(400)
+          .send({ success: false, message: "Password is required" });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -1022,7 +1153,13 @@ webhookReceiver: async (req, res) => {
         user: { ...newUser.toObject(), password: undefined },
       });
     } catch (err) {
-      res.status(500).send({ success: false, message: "Internal server error", error: err.message });
+      res
+        .status(500)
+        .send({
+          success: false,
+          message: "Internal server error",
+          error: err.message,
+        });
     }
   },
 
@@ -1089,13 +1226,11 @@ webhookReceiver: async (req, res) => {
 
       res.status(200).send({ success: true, profile });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1200,13 +1335,11 @@ webhookReceiver: async (req, res) => {
         .status(200)
         .send({ success: true, message: "User updated successfully", user });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1248,13 +1381,11 @@ webhookReceiver: async (req, res) => {
         user,
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1269,13 +1400,11 @@ webhookReceiver: async (req, res) => {
       }
       res.status(200).send({ success: true, user });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1292,13 +1421,11 @@ webhookReceiver: async (req, res) => {
         .status(200)
         .send({ success: true, message: "User deleted successfully" });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1308,12 +1435,10 @@ webhookReceiver: async (req, res) => {
       const { status } = req.body;
 
       if (!status || !["active", "inactive"].includes(status)) {
-        return res
-          .status(400)
-          .send({
-            success: false,
-            message: "Valid status required (active/inactive)",
-          });
+        return res.status(400).send({
+          success: false,
+          message: "Valid status required (active/inactive)",
+        });
       }
 
       const user = await User.findByIdAndUpdate(
@@ -1328,21 +1453,17 @@ webhookReceiver: async (req, res) => {
           .send({ success: false, message: "User not found" });
       }
 
-      res
-        .status(200)
-        .send({
-          success: true,
-          message: `User status updated to ${status}`,
-          user,
-        });
+      res.status(200).send({
+        success: true,
+        message: `User status updated to ${status}`,
+        user,
+      });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1352,12 +1473,10 @@ webhookReceiver: async (req, res) => {
       const { newPassword } = req.body;
 
       if (!newPassword || newPassword.length < 6) {
-        return res
-          .status(400)
-          .send({
-            success: false,
-            message: "Password must be at least 6 characters",
-          });
+        return res.status(400).send({
+          success: false,
+          message: "Password must be at least 6 characters",
+        });
       }
 
       const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -1377,13 +1496,11 @@ webhookReceiver: async (req, res) => {
         .status(200)
         .send({ success: true, message: "Password reset successfully", user });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1421,13 +1538,11 @@ webhookReceiver: async (req, res) => {
 
       res.status(200).send({ success: true, stats });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1454,13 +1569,11 @@ webhookReceiver: async (req, res) => {
         },
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1509,13 +1622,11 @@ webhookReceiver: async (req, res) => {
         user: updatedUser,
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1535,13 +1646,11 @@ webhookReceiver: async (req, res) => {
         message: "Wallet request deleted successfully",
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1595,13 +1704,11 @@ webhookReceiver: async (req, res) => {
 
       res.status(200).send({ success: true, orderHistory });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1647,13 +1754,11 @@ webhookReceiver: async (req, res) => {
 
       res.status(200).send({ success: true, dashboard });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 };
