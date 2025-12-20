@@ -1,6 +1,7 @@
 // Background Retry Queue System
 const retryQueue = [];
 let isProcessing = false;
+let queueStartTime = Date.now(); // Track when queue started
 
 const addToRetryQueue = (phoneNumber, content, token, type) => {
   retryQueue.push({
@@ -27,6 +28,18 @@ const processRetryQueue = async (sendJioSms) => {
 
   isProcessing = true;
   console.log(`🔄 Processing retry queue | Items: ${retryQueue.length}`);
+
+  // Remove old items (older than 10 minutes)
+  const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+  const beforeLength = retryQueue.length;
+  for (let i = retryQueue.length - 1; i >= 0; i--) {
+    if (retryQueue[i].addedAt < tenMinutesAgo) {
+      retryQueue.splice(i, 1);
+    }
+  }
+  if (beforeLength !== retryQueue.length) {
+    console.log(`🗑️ Removed ${beforeLength - retryQueue.length} old items from queue`);
+  }
 
   while (retryQueue.length > 0) {
     const item = retryQueue.shift();
@@ -66,5 +79,9 @@ const processRetryQueue = async (sendJioSms) => {
   isProcessing = false;
   console.log("✅ Queue processing completed");
 };
+
+// Clear old queue on startup
+retryQueue.length = 0;
+console.log("🧹 Retry queue cleared on startup");
 
 export { addToRetryQueue, processRetryQueue };
