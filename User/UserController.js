@@ -439,51 +439,53 @@ const UserController = {
       console.log(`🔍 Event: ${eventType}, MsgId: ${messageId || orgMsgId}`);
 
       if (eventType === "USER_MESSAGE" && orgMsgId) {
-        const message = await Message.findOne({ "results.messageId": orgMsgId });
-        if (message) {
-          const idx = message.results.findIndex((r) => r.messageId === orgMsgId);
-          if (idx !== -1) {
-            message.results[idx].userReplay = webhookData?.entity?.text || null;
-            message.results[idx].entityType = webhookData?.entityType || null;
-            if (webhookData?.entity?.suggestionResponse) {
-              message.results[idx].userCliked = (message.results[idx].userCliked || 0) + 1;
-              if (!Array.isArray(message.results[idx].suggestionResponse)) {
-                message.results[idx].suggestionResponse = [];
-              }
-              message.results[idx].suggestionResponse.push({
-                ...webhookData?.entity?.suggestionResponse,
-                clickedAt: new Date().toISOString(),
-                clickNumber: message.results[idx].userCliked,
-              });
-            }
-            message.markModified('results');
-            await message.save();
-            console.log(`✅ User reply saved`);
+        await Message.findOneAndUpdate(
+          { "results.messageId": orgMsgId },
+          {
+            $set: {
+              "results.$.userReplay": webhookData?.entity?.text || null,
+              "results.$.entityType": webhookData?.entityType || null,
+            },
           }
-        }
+        );
+        console.log(`✅ User reply saved`);
       } else if (messageId) {
         const message = await Message.findOne({ "results.messageId": messageId });
         if (message) {
           const idx = message.results.findIndex((r) => r.messageId === messageId);
           if (idx !== -1) {
             const oldStatus = message.results[idx].messaestatus;
-            message.results[idx].messaestatus = eventType;
-            message.results[idx].error = webhookData?.entity?.error || eventType === "SEND_MESSAGE_FAILURE";
-            message.results[idx].errorMessage = webhookData?.entity?.error?.message || null;
+            
+            // Direct update without version check
+            await Message.updateOne(
+              { _id: message._id, "results.messageId": messageId },
+              {
+                $set: {
+                  [`results.${idx}.messaestatus`]: eventType,
+                  [`results.${idx}.error`]: webhookData?.entity?.error || eventType === "SEND_MESSAGE_FAILURE",
+                  [`results.${idx}.errorMessage`]: webhookData?.entity?.error?.message || null,
+                },
+              }
+            );
 
             if (eventType === "SEND_MESSAGE_FAILURE" && oldStatus !== "SEND_MESSAGE_FAILURE") {
               await User.findByIdAndUpdate(message.userId, { $inc: { Wallet: 1 } });
               console.log(`💰 Refunded ₹1`);
             }
 
-            message.successCount = message.results.filter(
+            // Update counts
+            const updatedMessage = await Message.findById(message._id);
+            const successCount = updatedMessage.results.filter(
               (r) => r.messaestatus === "MESSAGE_DELIVERED" || r.messaestatus === "MESSAGE_READ" || r.messaestatus === "SEND_MESSAGE_SUCCESS"
             ).length;
-            message.failedCount = message.results.filter((r) => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
+            const failedCount = updatedMessage.results.filter((r) => r.messaestatus === "SEND_MESSAGE_FAILURE").length;
 
-            message.markModified('results');
-            await message.save();
-            console.log(`✅ Status updated: ${eventType} | Success: ${message.successCount} | Failed: ${message.failedCount}`);
+            await Message.updateOne(
+              { _id: message._id },
+              { $set: { successCount, failedCount } }
+            );
+
+            console.log(`✅ Status updated: ${eventType} | Success: ${successCount} | Failed: ${failedCount}`);
           } else {
             console.log(`❌ MsgId not in results`);
           }
@@ -494,8 +496,8 @@ const UserController = {
 
       res.status(200).json({ success: true, message: "Webhook received" });
     } catch (error) {
-      console.error("❌ Webhook Error:", error);
-      res.status(500).json({ success: false, error: error.message });
+      console.error("❌ Webhook Error:", error.message);
+      res.status(200).json({ success: true, message: "Webhook received" }); // Always return 200
     }
   },
 
