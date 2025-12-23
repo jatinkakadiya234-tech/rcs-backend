@@ -1,6 +1,7 @@
 import Message from "./MessageModel.js";
 import Template from "../Tamplete/TampletModel.js";
 import mongoose from "mongoose";
+import { getIO } from "../socket.js";
 
 const MessageController = {
   //----------getAllMessages-------(New)-----------
@@ -44,6 +45,13 @@ const MessageController = {
       //   "=====executionTimeMs======================="
       // );
 
+      try {
+        const io = getIO();
+        io.to(`user_${id}`).emit('messagesUpdated', { messages, total });
+      } catch (socketErr) {
+        console.log('Socket emit failed:', socketErr.message);
+      }
+
       return res.status(200).json({
         success: true,
         data: messages,
@@ -75,6 +83,13 @@ const MessageController = {
       .lean();
 
     const diff = process.hrtime(start);
+    try {
+      const io = getIO();
+      io.emit('messageViewed', { messageId: req.params.id });
+    } catch (socketErr) {
+      console.log('Socket emit failed:', socketErr.message);
+    }
+
     res.json({
       success: true,
       data: message,
@@ -111,6 +126,13 @@ const MessageController = {
       const messagesByType = await Message.aggregate([
         { $group: { _id: "$type", count: { $sum: 1 } } },
       ]);
+
+      try {
+        const io = getIO();
+        io.emit('reportsUpdated', { total, successfulMessages: successfulMessages[0]?.total || 0 });
+      } catch (socketErr) {
+        console.log('Socket emit failed:', socketErr.message);
+      }
 
       res.status(200).send({
         success: true,
@@ -162,6 +184,13 @@ const MessageController = {
         failedCount: order.failedCount || 0,
         totalNumbers: order.phoneNumbers?.length || 0,
       }));
+
+      try {
+        const io = getIO();
+        io.to(`user_${userId}`).emit('recentOrdersUpdated', { orders: ordersWithCounts });
+      } catch (socketErr) {
+        console.log('Socket emit failed:', socketErr.message);
+      }
 
       res.status(200).send({
         success: true,
@@ -223,6 +252,18 @@ const MessageController = {
         pendingMessages: 0,
       };
 
+      try {
+        const io = getIO();
+        io.to(`user_${userId}`).emit('userStatsUpdated', { 
+          totalMessages: stats.totalMessages,
+          failedMessages: stats.messagesWithFailures,
+          pendingMessages: stats.pendingMessages,
+          sentMessages: stats.messagesWithSuccess
+        });
+      } catch (socketErr) {
+        console.log('Socket emit failed:', socketErr.message);
+      }
+
       res.status(200).send({
         success: true,
         data: {
@@ -245,10 +286,11 @@ const MessageController = {
   getMessageDetails: async (req, res) => {
     try {
       const { id } = req.params;
-      const { page = 1, limit = 10 } = req.query;
+      const { page = 1, limit = 50 } = req.query;
 
+      // Get basic message info first
       const message = await Message.findById(id)
-        .select("_id type CampaignName cost successCount failedCount   ")
+        .select("_id type CampaignName cost successCount failedCount createdAt")
         .lean();
 
       if (!message) {
@@ -258,35 +300,46 @@ const MessageController = {
         });
       }
 
+      // Get total count efficiently
+      const totalResults = await Message.aggregate([
+        { $match: { _id: new mongoose.Types.ObjectId(id) } },
+        { $project: { resultCount: { $size: "$results" } } }
+      ]);
+      
+      const total = totalResults[0]?.resultCount || 0;
       const skip = (page - 1) * limit;
       
-      const fullMessage = await Message.findById(id)
-        .select({ results: { $slice: [skip, parseInt(limit)] } })
-        .lean();
+      // Get paginated results
+      const resultsData = await Message.aggregate([
+        { $match: { _id: new mongoose.Types.ObjectId(id) } },
+        { $project: { results: { $slice: ["$results", skip, parseInt(limit)] } } }
+      ]);
 
-      const totalResults = await Message.findById(id)
-        .select("results")
-        .lean()
-        .then(doc => doc?.results?.length || 0);
-
-      const filteredResults = fullMessage?.results?.map(r => ({
+      const results = resultsData[0]?.results?.map(r => ({
         phone: r?.phone,
         status: r?.status,
-        messaestatus:r?.messaestatus,
-        errorMessage:r?.errorMessage || null,
-        suggestionResponse:r?.suggestionResponse || []
+        messaestatus: r?.messaestatus,
+        errorMessage: r?.errorMessage || null,
+        suggestionResponse: r?.suggestionResponse || []
       })) || [];
+
+      try {
+        const io = getIO();
+        io.emit('messageDetailsViewed', { messageId: id, resultsCount: total });
+      } catch (socketErr) {
+        console.log('Socket emit failed:', socketErr.message);
+      }
 
       res.status(200).send({
         success: true,
         data: {
           ...message,
-          results: filteredResults,
+          results,
           resultsPagination: {
             page: parseInt(page),
             limit: parseInt(limit),
-            total: totalResults,
-            pages: Math.ceil(totalResults / limit),
+            total,
+            pages: Math.ceil(total / limit),
           },
         },
       });
@@ -312,6 +365,15 @@ const MessageController = {
         });
       }
 
+
+
+      try {
+        const io = getIO();
+        io.to(`user_${deletedMessage.userId}`).emit('messageDeleted', { messageId: id });
+      } catch (socketErr) {
+        console.log('Socket emit failed:', socketErr.message);
+      }
+
       res.status(200).send({
         success: true,
         message: "Message deleted successfully",
@@ -325,6 +387,7 @@ const MessageController = {
       });
     }
   },
+
 };
 
 export default MessageController;

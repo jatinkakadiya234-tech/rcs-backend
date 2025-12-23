@@ -13,6 +13,12 @@ export const initSocket = (server) => {
   io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     
+    // Join user-specific room
+    socket.on('joinUser', (userId) => {
+      socket.join(`user_${userId}`);
+      console.log(`User ${userId} joined room`);
+    });
+
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id);
     });
@@ -28,8 +34,44 @@ export const getIO = () => {
   return io;
 };
 
+// Emit message updates to specific user
 export const emitMessageUpdate = (userId, campaignName, data) => {
   if (io) {
-    io.emit(`messageUpdate_${userId}_${campaignName}`, data);
+    io.to(`user_${userId}`).emit('messageUpdate', { campaignName, ...data });
+  }
+};
+
+// Emit new message created
+export const emitNewMessage = (userId, message) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('newMessage', message);
+  }
+};
+
+// Emit message deleted
+export const emitMessageDeleted = (userId, messageId) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('messageDeleted', { messageId });
+  }
+};
+
+// Emit batch progress
+export const emitBatchProgress = (userId, data) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('batchProgress', data);
+  }
+};
+
+// Emit capability check progress
+export const emitCapabilityProgress = (userId, data) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('capabilityProgress', data);
+  }
+};
+
+// Emit Excel import progress
+export const emitImportProgress = (userId, data) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('importProgress', data);
   }
 };

@@ -121,7 +121,7 @@ const checkBulkCapability = async (phoneNumbers, token) => {
         timeout: 10000,
       }
     );
-    console.log("bulk API");
+    console.log("bulk API===================================", res);
     return res.data || null;
   } catch (error) {
     console.error(
@@ -905,28 +905,13 @@ if(createCamian) return res.status(200).send({
           .status(400)
           .send({ success: false, message: "userId required" });
 
-      // Remove duplicates
       const originalCount = phoneNumbers.length;
       phoneNumbers = [...new Set(phoneNumbers)];
       const duplicatesRemoved = originalCount - phoneNumbers.length;
 
-      console.log(
-        `Original: ${originalCount}, After removing duplicates: ${phoneNumbers.length}, Removed: ${duplicatesRemoved}`
-      );
-
       const jioToken = await fetchJioToken(userId);
 
-      // Use bulk API only if 500+ numbers, otherwise check individually
-      if (phoneNumbers.length >= 500) {
-        console.log(`Using bulk API for ${phoneNumbers.length} numbers`);
-        const bulkResults = await checkBulkCapability(phoneNumbers, jioToken);
-        return res.status(200).send({
-          success: true,
-          rcsMessaging: bulkResults,
-          duplicatesRemoved,
-        });
-      } else {
-        console.log(`Checking ${phoneNumbers.length} numbers individually`);
+      if (phoneNumbers.length < 500) {
         const results = await Promise.all(
           phoneNumbers.map((phone) => checkRcsCapability(phone, jioToken))
         );
@@ -945,6 +930,29 @@ if(createCamian) return res.status(200).send({
           duplicatesRemoved,
         });
       }
+
+      // Bulk API with 10,000 limit
+      const BATCH_SIZE = 10000;
+      let allReachableUsers = [];
+
+      for (let i = 0; i < phoneNumbers.length; i += BATCH_SIZE) {
+        const batch = phoneNumbers.slice(i, i + BATCH_SIZE);
+        const bulkResults = await checkBulkCapability(batch, jioToken);
+        
+        if (bulkResults?.reachableUsers) {
+          allReachableUsers.push(...bulkResults.reachableUsers);
+        }
+      }
+
+      return res.status(200).send({
+        success: true,
+        rcsMessaging: {
+          reachableUsers: allReachableUsers,
+          totalRandomSampleUserCount: phoneNumbers.length,
+          reachableRandomSampleUserCount: allReachableUsers.length,
+        },
+        duplicatesRemoved,
+      });
     } catch (err) {
       res.status(500).send({
         success: false,

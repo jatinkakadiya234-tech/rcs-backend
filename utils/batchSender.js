@@ -1,5 +1,5 @@
 import Message from "../Message/MessageModel.js";
-import { emitMessageUpdate } from "../socket.js";
+import { emitMessageUpdate, emitBatchProgress } from "../socket.js";
 
 export const sendMessagesInBatches = async (
   phoneNumbers,
@@ -21,6 +21,15 @@ export const sendMessagesInBatches = async (
     const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
     
     console.log(`📦 Processing batch ${batchNumber}/${Math.ceil(phoneNumbers.length / BATCH_SIZE)} - Numbers: ${i + 1} to ${Math.min(i + BATCH_SIZE, phoneNumbers.length)}`);
+    
+    // Emit batch start
+    emitBatchProgress(userId, {
+      batchNumber,
+      totalBatches: Math.ceil(phoneNumbers.length / BATCH_SIZE),
+      status: 'processing',
+      processed: i,
+      total: phoneNumbers.length
+    });
     
     const batchPromises = batch.map(async (phoneNumber, index) => {
       try {
@@ -83,6 +92,17 @@ export const sendMessagesInBatches = async (
       totalBatches: Math.ceil(phoneNumbers.length / BATCH_SIZE)
     });
     
+    // Emit batch completion
+    emitBatchProgress(userId, {
+      batchNumber,
+      totalBatches: Math.ceil(phoneNumbers.length / BATCH_SIZE),
+      status: 'completed',
+      processed: i + batch.length,
+      total: phoneNumbers.length,
+      batchSuccess: successCount,
+      batchFailed: failCount
+    });
+    
     console.log(`💾 Batch ${batchNumber} results saved to database`);
 
     // Small delay between batches
@@ -95,6 +115,15 @@ export const sendMessagesInBatches = async (
   const totalSuccess = results.filter(r => !r.error).length;
   const totalFailed = results.filter(r => r.error).length;
   console.log(`🏁 All batches completed! Total: ${results.length}, Success: ${totalSuccess}, Failed: ${totalFailed}`);
+
+  // Emit final completion
+  emitBatchProgress(userId, {
+    status: 'finished',
+    processed: phoneNumbers.length,
+    total: phoneNumbers.length,
+    totalSuccess,
+    totalFailed
+  });
 
   return results;
 };
