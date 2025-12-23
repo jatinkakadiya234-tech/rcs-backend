@@ -7,7 +7,6 @@ const userRouter = exxpress.Router();
 userRouter.post("/register", UserController.registerUser);
 userRouter.post("/login", UserController.loginUser);
 userRouter.post("/logout", UserController.logoutUser);
-userRouter.post("/sendMessage", UserController.sendMessage);
 userRouter.post("/jio/rcs/webhook", UserController.webhookReceiver);
 userRouter.post("/checkAvablityNumber",UserController.checkAvablityNumber);
 userRouter.post("/uploadFile", upload.single('file'), UserController.uploadImage);

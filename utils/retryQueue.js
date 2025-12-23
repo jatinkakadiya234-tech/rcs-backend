@@ -15,7 +15,7 @@ const addToRetryQueue = (phoneNumber, content, token, type) => {
   console.log(`📥 Added to retry queue: ${phoneNumber} | Queue size: ${retryQueue.length}`);
 };
 
-const processRetryQueue = async (sendJioSms) => {
+const processRetryQueue = async (userId, sendJioSms) => {
   if (isProcessing) {
     console.log("⏳ Queue already processing, skipping...");
     return;

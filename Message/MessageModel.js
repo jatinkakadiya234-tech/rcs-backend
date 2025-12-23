@@ -15,16 +15,12 @@ const MessageSchema = new mongoose.Schema({
     required: true,
   },
   CampaignName: { type: String, required: true },
+  campaignId: { type: mongoose.Schema.Types.ObjectId, ref: "Campaign" },
   content: { type: mongoose.Schema.Types.Mixed, required: true },
   phoneNumbers: [{ type: String, required: true }],
   status: { type: String, default: "sent" },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   cost: { type: Number, default: 0 },
-  batchInfo: {
-    totalBatches: { type: Number, default: 1 },
-    batchSize: { type: Number, default: 100 },
-    processedCount: { type: Number, default: 0 }
-  },
   results: [
     {
       phone: String,
@@ -38,8 +34,8 @@ const MessageSchema = new mongoose.Schema({
       userReplay: Number,
       userCliked: Number,
       entityType: String,
-      suggestionResponse: [{ type: mongoose.Schema.Types.Mixed }],
-      attempt: { type: Number, default: 1 }
+      suggestionResponse: [{ type: mongoose.Schema.Types.Mixed }]
+      
     },
   ],
   successCount: { type: Number, default: 0 },
@@ -50,5 +46,10 @@ const MessageSchema = new mongoose.Schema({
   errorDetails: [{ type: mongoose.Schema.Types.Mixed }],
   createdAt: { type: Date, default: Date.now },
 });
+
+// 🚀 Performance Indexes
+MessageSchema.index({ userId: 1, createdAt: -1 }); // For getUserOrderHistory
+MessageSchema.index({ "results.messageId": 1 }); // For webhook processing
+MessageSchema.index({ CampaignName: 1, userId: 1 }); // For campaign check
 
 export default mongoose.model("tbl_Messages", MessageSchema);

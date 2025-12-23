@@ -12,13 +12,24 @@ import TransactionController from "../Transaction/TransactionController.js";
 import Transaction from "../Transaction/TransactionModel.js";
 import mongoose from "mongoose";
 import fs from "fs";
+import https from "https";
+import startSmsWorker from "../workers/sms.worker.js";
+import CampaignModel from "../Message/CampaignModel.js";
+import Result from "../models/ResultModel.js";
+import Campaign from "../models/CampaignModel.js";
+import { emitMessageUpdate } from "../socket.js";
 dotenv.config();
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 100,
+});
 
 // --- Token cache (per user) ---
 let tokenCache = new Map(); // { userId: { token, expiry } }
 
 // --- Fetch Jio OAuth Token with user credentials ---
-const fetchJioToken = async (userId) => {
+export const fetchJioToken = async (userId) => {
   const now = Date.now();
 
   // Check if token exists in cache for this specific user
@@ -125,63 +136,119 @@ const checkBulkCapability = async (phoneNumbers, token) => {
 };
 
 // --- ✅ Optimized Send SMS with retry logic ---
+// const sendJioSms = async (phoneNumber, content, token, type, retries = 2) => {
+//   for (let attempt = 0; attempt <= retries; attempt++) {
+//     try {
+//       let formattedPhone = phoneNumber
+//         .toString()
+//         .trim()
+//         .replace(/[^0-9+]/g, "");
+//       if (!formattedPhone.startsWith("+91"))
+//         formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
+
+//       const messageId = `msg_${uuidv4()}`;
+//       const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
+
+//       const payload = {
+//         botId: process.env.JIO_ASSISTANT_ID,
+//         content: content,
+//       };
+
+//       const response = await axios.post(url, payload, {
+//         headers: {
+//           Authorization: `Bearer ${token}`,
+//           "Content-Type": "application/json",
+//         },
+//         timeout: 15000, // Increased timeout
+//       });
+
+//       return {
+//         phone: formattedPhone,
+//         status: response.status,
+//         response: response.data,
+//         messageId,
+//         timestamp: new Date().toISOString(),
+//         result: "Message Sent Successfully",
+//         type: type,
+//         statusText: response.statusText,
+//         attempt: attempt + 1,
+//         messaestatus: "SEND_MESSAGE_SUCCESS"
+//       };
+//     } catch (error) {
+//       if (attempt === retries) {
+//         console.error(`❌ Final attempt failed for ${phoneNumber}:`, error.response?.data || error.message);
+//         return {
+//           phone: phoneNumber,
+//           status: error.response?.status || 500,
+//           response: { error: error.response?.data || error.message },
+//           error: true,
+//           timestamp: new Date().toISOString(),
+//           attempt: attempt + 1,
+//           messaestatus: "SEND_MESSAGE_FAILURE"
+//         };
+//       }
+//       // Wait before retry
+//       await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+//     }
+//   }
+// };
+
 const sendJioSms = async (phoneNumber, content, token, type, retries = 2) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      let formattedPhone = phoneNumber
-        .toString()
-        .trim()
-        .replace(/[^0-9+]/g, "");
-      if (!formattedPhone.startsWith("+91"))
-        formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
+      let formattedPhone = phoneNumber.toString().replace(/[^0-9]/g, "");
+
+      if (!formattedPhone.startsWith("91")) {
+        formattedPhone = "91" + formattedPhone;
+      }
+
+      formattedPhone = "+" + formattedPhone;
 
       const messageId = `msg_${uuidv4()}`;
+
       const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
 
-      const payload = {
-        botId: process.env.JIO_ASSISTANT_ID,
-        content: content,
-      };
-
-      const response = await axios.post(url, payload, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+      const response = await axios.post(
+        url,
+        {
+          botId: process.env.JIO_ASSISTANT_ID,
+          content,
         },
-        timeout: 15000, // Increased timeout
-      });
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 15000,
+          httpsAgent,
+        }
+      );
 
       return {
         phone: formattedPhone,
         status: response.status,
-        response: response.data,
         messageId,
-        timestamp: new Date().toISOString(),
-        result: "Message Sent Successfully",
-        type: type,
-        statusText: response.statusText,
+        result: "SUCCESS",
+        type,
         attempt: attempt + 1,
-        messaestatus: "SEND_MESSAGE_SUCCESS"
+        timestamp: new Date(),
       };
     } catch (error) {
       if (attempt === retries) {
-        console.error(`❌ Final attempt failed for ${phoneNumber}:`, error.response?.data || error.message);
         return {
           phone: phoneNumber,
           status: error.response?.status || 500,
-          response: { error: error.response?.data || error.message },
-          error: true,
-          timestamp: new Date().toISOString(),
+          result: "FAILED",
+          error: error.response?.data || error.message,
           attempt: attempt + 1,
-          messaestatus: "SEND_MESSAGE_FAILURE"
+          timestamp: new Date(),
         };
       }
-      // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+
+      await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
     }
   }
 };
-
 
 // export const sendBulkJioSms = async ({
 //   phoneNumbers = [],
@@ -437,157 +504,322 @@ const UserController = {
   webhookReceiver: async (req, res) => {
     try {
       const webhookData = req.body;
-      console.log(
-        "📥 Jio Webhook Received:",
-        JSON.stringify(webhookData, null, 2)
-      );
+      console.log('📥 Jio Webhook Received:', JSON.stringify(webhookData, null, 2));
+      
+      const eventType = webhookData?.entity?.eventType || webhookData?.entityType;
+      const orderId = webhookData.metaData?.orgMsgId;
+      const messageId = webhookData?.entity?.messageId;
+      const suggestionResponse = webhookData?.entity?.suggestionResponse;
+      const userText = webhookData?.entity?.text;
+      
+      if (!messageId) {
+        return res.status(400).send({ success: false, message: "Missing messageId" });
+      }
 
-      const eventType =
-        webhookData?.entity?.eventType || webhookData?.entityType;
-      const orgMsgId = webhookData?.metaData?.orgMsgId;
-      const userPhoneNumber = webhookData?.userPhoneNumber;
-
-      // For USER_MESSAGE, use orgMsgId to find original message
-      if (eventType === "USER_MESSAGE" && orgMsgId) {
-        const message = await Message.findOne({
-          "results.messageId": orgMsgId,
-        });
-
-        if (message) {
-          const resultIndex = message.results.findIndex(
-            (r) => r.messageId === orgMsgId
-          );
-          if (resultIndex !== -1) {
-            message.results[resultIndex].userReplay =
-              webhookData?.entity?.text || null;
-            message.results[resultIndex].entityType =
-              webhookData?.entityType || null;
-
-            // Handle suggestion response - track clicks
-            if (webhookData?.entity?.suggestionResponse) {
-              // Increment click count each time suggestion is clicked
-              message.results[resultIndex].userCliked =
-                (message.results[resultIndex].userCliked || 0) + 1;
-              console.log(
-                `🎯 Suggestion clicked ${message.results[resultIndex].userCliked} time(s)`
-              );
-
-              // Store the suggestion response
-              if (
-                !Array.isArray(message.results[resultIndex].suggestionResponse)
-              ) {
-                message.results[resultIndex].suggestionResponse = [];
-              }
-              message.results[resultIndex].suggestionResponse.push({
-                ...webhookData?.entity?.suggestionResponse,
-                clickedAt: new Date().toISOString(),
-                clickNumber: message.results[resultIndex].userCliked,
-              });
+      // Update in Message.results for real-time status updates
+      const message = await Message.findOne({ "results.messageId": messageId });
+      if (message) {
+        const resultIndex = message.results.findIndex(r => r.messageId === messageId);
+        if (resultIndex !== -1) {
+          message.results[resultIndex].messaestatus = eventType;
+          message.results[resultIndex].error = eventType === "SEND_MESSAGE_FAILURE";
+          
+          // Handle suggestion clicks
+          if (suggestionResponse) {
+            message.results[resultIndex].userCliked = (message.results[resultIndex].userCliked || 0) + 1;
+            if (!message.results[resultIndex].suggestionResponse) {
+              message.results[resultIndex].suggestionResponse = [];
             }
-
-            await message.save();
-            console.log(
-              `✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`
-            );
+            message.results[resultIndex].suggestionResponse.push({
+              ...suggestionResponse,
+              clickedAt: new Date().toISOString(),
+              clickNumber: message.results[resultIndex].userCliked
+            });
           }
-        }
-      } else {
-        // For other events, use entity.messageId
-        const messageId = webhookData?.entity?.messageId;
-
-        if (messageId) {
-          const message = await Message.findOne({
-            "results.messageId": messageId,
+          
+          // Handle user replies
+          if (userText) {
+            message.results[resultIndex].userReplay = userText;
+          }
+          
+          // Update counts
+          message.successCount = message.results.filter(r => 
+            r.messaestatus === "MESSAGE_DELIVERED" || 
+            r.messaestatus === "MESSAGE_READ" || 
+            r.messaestatus === "SEND_MESSAGE_SUCCESS"
+          ).length;
+          message.failedCount = message.results.filter(r => 
+            r.messaestatus === "SEND_MESSAGE_FAILURE"
+          ).length;
+          
+          await message.save();
+          
+          // Emit real-time update
+          emitMessageUpdate(message.userId, message.CampaignName, {
+            successCount: message.successCount,
+            failedCount: message.failedCount,
+            delivered: message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED").length,
+            read: message.results.filter(r => r.messaestatus === "MESSAGE_READ").length,
+            clicked: message.results.filter(r => r.userCliked > 0).length,
+            replied: message.results.filter(r => r.userReplay).length,
+            messageId,
+            status: eventType,
+            phone: message.results[resultIndex].phone,
+            ...(suggestionResponse && { clickData: suggestionResponse }),
+            ...(userText && { replyText: userText })
           });
-
-          if (message) {
-            const resultIndex = message.results.findIndex(
-              (r) => r.messageId === messageId
-            );
-            if (resultIndex !== -1) {
-              const oldStatus = message.results[resultIndex].messaestatus;
-              message.results[resultIndex].messaestatus = eventType;
-              message.results[resultIndex].error =
-                webhookData?.entity?.error ||
-                eventType === "SEND_MESSAGE_FAILURE";
-              message.results[resultIndex].errorMessage =
-                webhookData?.entity?.error?.message || null;
-
-              // If message failed and wasn't already failed, refund user
-              if (
-                eventType === "SEND_MESSAGE_FAILURE" &&
-                oldStatus !== "SEND_MESSAGE_FAILURE"
-              ) {
-                await User.findByIdAndUpdate(message.userId, {
-                  $inc: { Wallet: 1 },
-                });
-                console.log(
-                  `💰 Refunded ₹1 to user ${message.userId} for failed message ${messageId}`
-                );
-              }
-
-              message.successCount = message.results.filter(
-                (r) =>
-                  r.messaestatus === "MESSAGE_DELIVERED" ||
-                  r.messaestatus === "MESSAGE_READ" ||
-                  r.messaestatus === "SEND_MESSAGE_SUCCESS"
-              ).length;
-              message.failedCount = message.results.filter(
-                (r) => r.messaestatus === "SEND_MESSAGE_FAILURE"
-              ).length;
-
-              await message.save();
-              console.log(
-                `✅ Updated message ${messageId} with status: ${eventType}`
-              );
-            }
-          }
         }
       }
 
-      res.status(200).json({ success: true, message: "Webhook received" });
+      console.log(`✅ Status updated: ${messageId} -> ${eventType}`);
+      res.status(200).send({ success: true, message: "Webhook processed" });
+      
+      if (!messageId) {
+        return res.status(400).send({ success: false, message: "Missing messageId" });
+      }
+
+      // Find and update result in Result model
+      const result = await Result.findOneAndUpdate(
+        { messageId },
+        {
+          status: status?.toUpperCase() || 'DELIVERED',
+          ...(status === 'DELIVERED' && { deliveredAt: new Date(timestamp) }),
+          ...(status === 'READ' && { readAt: new Date(timestamp) })
+        },
+        { new: true }
+      );
+
+      if (!result) {
+        console.log(`⚠️ Result not found for messageId: ${messageId}`);
+        return res.status(404).send({ success: false, message: "Result not found" });
+      }
+
+      // Get updated campaign stats
+      const campaignStats = await Result.aggregate([
+        { $match: { campaignId: result.campaignId } },
+        {
+          $group: {
+            _id: null,
+            totalSent: { $sum: 1 },
+            delivered: { $sum: { $cond: [{ $eq: ["$status", "DELIVERED"] }, 1, 0] } },
+            read: { $sum: { $cond: [{ $eq: ["$status", "READ"] }, 1, 0] } },
+            failed: { $sum: { $cond: [{ $eq: ["$status", "FAILED"] }, 1, 0] } }
+          }
+        }
+      ]);
+
+      const stats = campaignStats[0] || { totalSent: 0, delivered: 0, read: 0, failed: 0 };
+
+      // Update campaign stats
+      await Campaign.findByIdAndUpdate(result.campaignId, {
+        'stats.sent': stats.totalSent,
+        'stats.delivered': stats.delivered,
+        'stats.read': stats.read,
+        'stats.failed': stats.failed
+      });
+
+      // Emit real-time update
+      emitMessageUpdate(result.userId, `campaign_${result.campaignId}`, {
+        totalSent: stats.totalSent,
+        delivered: stats.delivered,
+        read: stats.read,
+        failed: stats.failed,
+        messageId,
+        status: result.status,
+        phone: result.phone
+      });
+
+      console.log(`✅ Status updated: ${messageId} -> ${result.status}`);
+      res.status(200).send({ success: true, message: "Webhook processed" });
+
     } catch (error) {
-      console.error("❌ Webhook Error:", error);
-      res.status(500).json({ success: false, error: error.message });
+      console.error('❌ Webhook error:', error);
+      res.status(500).send({ success: false, message: "Webhook processing failed" });
     }
   },
 
   sendMessage: async (req, res) => {
+    // const { sendMessagesInBatches } = await import("../utils/batchSender.js");
+    // const { processRetryQueue } = await import("../utils/retryQueue.js");
+    //----OLd code-----
+    // try {
+    //   const { type, content, phoneNumbers, userId, campaignName } = req.body
+
+    //   console.log(req.body, "------request body data");
+
+    //   if (!type || !content || !phoneNumbers || !userId || !campaignName) {
+    //     return res
+    //       .status(400)
+    //       .send({ success: false, message: "Missing required fields" });
+    //   }
+
+    //   let allredyCampaign = await Message.findOne({
+    //     CampaignName: campaignName,
+    //     userId: userId,
+    //   });
+
+    //   if (allredyCampaign) {
+    //     return res
+    //       .status(400)
+    //       .send({
+    //         success: false,
+    //         message:
+    //           "Campaign name already exists. Please choose a different name.",
+    //       });
+    //   }
+
+    //   // Check user wallet balance
+    //   const user = await User.findById(userId);
+    //   if (!user) {
+    //     return res
+    //       .status(404)
+    //       .send({ success: false, message: "User not found" });
+    //   }
+
+    //   const phoneCount = phoneNumbers.length;
+    //   const costPerPhone = 1;
+    //   const totalCost = phoneCount * costPerPhone;
+
+    //   if (user.Wallet < totalCost) {
+    //     return res.status(400).send({
+    //       success: false,
+    //       message: "Insufficient balance",
+    //       required: totalCost,
+    //       available: user.Wallet,
+    //     });
+    //   }
+
+    //   const token = await fetchJioToken(userId);
+
+    //   // 🚀 Batch processing with 100 numbers per batch---
+
+    //   const BATCH_SIZE = 100;
+    //   const batches = [];
+
+    //   for (let i = 0; i < phoneNumbers.length; i += BATCH_SIZE) {
+    //     batches.push(phoneNumbers.slice(i, i + BATCH_SIZE));
+    //   }
+
+    //   let allResults = [];
+    //   let processedCount = 0;
+
+    //   // Process batches sequentially with delay------
+
+    //   s
+    //   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    //     const batch = batches[batchIndex];
+
+    //     // Send batch in parallel----
+
+    //     const batchResults = await Promise.all(
+    //       batch.map((phone) => sendJioSms(phone, content, token, type))
+    //     );
+
+    //     allResults = [...allResults, ...batchResults];
+    //     processedCount += batch.length;
+
+    //     console.log(`📤 Batch ${batchIndex + 1}/${batches.length} completed: ${batch.length} messages sent`);
+
+    //     if (batchIndex < batches.length - 1) {
+    //       await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+    //     }
+    //   }
+
+    //   // Deduct wallet balance------
+
+    //   await User.findByIdAndUpdate(userId, {
+    //     $inc: { Wallet: -totalCost },
+    //   });
+
+    //   const messageData = new Message({
+    //     type,
+    //     content,
+    //     phoneNumbers,
+    //     results: allResults,
+    //     userId,
+    //     cost: totalCost,
+    //     CampaignName: campaignName,
+    //     batchInfo: {
+    //       totalBatches: batches.length,
+    //       batchSize: BATCH_SIZE,
+    //       processedCount
+    //     }
+    //   });
+    //   await messageData.save();
+
+    //   const successCount = allResults.filter(r => r.status === 200 || r.status === 201).length;
+    //   const failedCount = allResults.filter(r => r.error || r.status >= 400).length;
+
+    //   return res.status(200).send({
+    //     success: true,
+    //     message: `Messages sent in ${batches.length} batches of ${BATCH_SIZE}`,
+    //     data: {
+    //       campaignId: messageData._id,
+    //       totalNumbers: phoneCount,
+    //       successCount,
+    //       failedCount,
+    //       batchInfo: {
+    //         totalBatches: batches.length,
+    //         batchSize: BATCH_SIZE
+    //       }
+    //     },
+    //     walletDeducted: totalCost,
+    //   });
+    // } catch (err) {
+    //   res.status(500).send({
+    //     success: false,
+    //     message: "Internal server error",
+    //     error: err.message,
+    //   });
+    // }
+
+    //----New code-----
     try {
-      const { type, content, phoneNumbers, userId, campaignName } = req.body;
+      const { type, content, phoneNumbers, userId, campaignName,templateId } = req.body;
+      
+      console.log( req.body, '-----------');
 
-      if (!type || !content || !phoneNumbers || !userId || !campaignName) {
-        return res
-          .status(400)
-          .send({ success: false, message: "Missing required fields" });
+      if (
+        !type ||
+        !content ||
+        !phoneNumbers?.length ||
+        !userId ||
+        !campaignName|| 
+        !templateId
+      ) {
+        return res.status(400).send({
+          success: false,
+          message: "Missing required fields",
+        });
       }
 
-      let allredyCampaign = await Message.findOne({
-        CampaignName: campaignName,
-        userId: userId,
-      });
-
-      if (allredyCampaign) {
-        return res
-          .status(400)
-          .send({
-            success: false,
-            message:
-              "Campaign name already exists. Please choose a different name.",
-          });
-      }
-
-      // Check user wallet balance
-      const user = await User.findById(userId);
+    const user = await User.findById(userId);
       if (!user) {
         return res
           .status(404)
           .send({ success: false, message: "User not found" });
       }
 
-      const phoneCount = phoneNumbers.length;
-      const costPerPhone = 1;
-      const totalCost = phoneCount * costPerPhone;
+
+ const createCamian = await CampaignModel.create({
+        campaignName,
+        templateId,
+        userId,
+        type,
+        content,
+        audienceCount: phoneNumbers.length,
+      })
+
+if(createCamian) return res.status(200).send({
+        success: true,
+        message: "Campaign created successfully",
+        campaignId: createCamian._id,
+        totalNumbers: phoneNumbers.length,
+      })
+      // Check user-----------
+
+    
+      const totalCost = phoneNumbers.length * 1;
 
       if (user.Wallet < totalCost) {
         return res.status(400).send({
@@ -598,78 +830,40 @@ const UserController = {
         });
       }
 
-      const token = await fetchJioToken(userId);
-      
-      // 🚀 Batch processing with 100 numbers per batch
-      const BATCH_SIZE = 100;
-      const batches = [];
-      for (let i = 0; i < phoneNumbers.length; i += BATCH_SIZE) {
-        batches.push(phoneNumbers.slice(i, i + BATCH_SIZE));
-      }
+      // Deduct wallet immediately-------------
 
-      let allResults = [];
-      let processedCount = 0;
-
-      // Process batches sequentially with delay
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        
-        // Send batch in parallel
-        const batchResults = await Promise.all(
-          batch.map((phone) => sendJioSms(phone, content, token, type))
-        );
-        
-        allResults = [...allResults, ...batchResults];
-        processedCount += batch.length;
-        
-        console.log(`📤 Batch ${batchIndex + 1}/${batches.length} completed: ${batch.length} messages sent`);
-        
-        // Add delay between batches (except last batch)
-        if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
-        }
-      }
-
-      // Deduct wallet balance
       await User.findByIdAndUpdate(userId, {
         $inc: { Wallet: -totalCost },
       });
 
-      const messageData = new Message({
-        type,
-        content,
-        phoneNumbers,
-        results: allResults,
-        userId,
-        cost: totalCost,
-        CampaignName: campaignName,
-        batchInfo: {
-          totalBatches: batches.length,
-          batchSize: BATCH_SIZE,
-          processedCount
-        }
-      });
-      await messageData.save();
+     
 
-      const successCount = allResults.filter(r => r.status === 200 || r.status === 201).length;
-      const failedCount = allResults.filter(r => r.error || r.status >= 400).length;
+  
+      // 🔥 Respond immediately---------------
 
-      return res.status(200).send({
+      res.status(200).send({
         success: true,
-        message: `Messages sent in ${batches.length} batches of ${BATCH_SIZE}`,
-        data: {
-          campaignId: messageData._id,
-          totalNumbers: phoneCount,
-          successCount,
-          failedCount,
-          batchInfo: {
-            totalBatches: batches.length,
-            batchSize: BATCH_SIZE
-          }
-        },
-        walletDeducted: totalCost,
+        message: "Campaign started successfully",
+        campaignId: campaign._id,
+        totalNumbers: phoneNumbers.length,
+      });
+
+      // 🚀 Background processing-------------
+
+      setImmediate(async () => {
+        await sendMessagesInBatches(
+          phoneNumbers,
+          content,
+          token,
+          type,
+          userId,
+          sendJioSms,
+          campaignName
+        );
+        await processRetryQueue(userId, sendJioSms);
       });
     } catch (err) {
+      console.error(err);
       res.status(500).send({
         success: false,
         message: "Internal server error",
@@ -978,12 +1172,10 @@ const UserController = {
 
       // Password validation (minimum 6 characters)
       if (password.length < 6) {
-        return res
-          .status(400)
-          .send({
-            success: false,
-            message: "Password must be at least 6 characters",
-          });
+        return res.status(400).send({
+          success: false,
+          message: "Password must be at least 6 characters",
+        });
       }
 
       const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
@@ -994,12 +1186,10 @@ const UserController = {
       }
 
       if (jioId && !jioSecret) {
-        return res
-          .status(400)
-          .send({
-            success: false,
-            message: "Jio Secret is required when Jio ID is provided",
-          });
+        return res.status(400).send({
+          success: false,
+          message: "Jio Secret is required when Jio ID is provided",
+        });
       }
       if (!companyname) {
         return res
@@ -1035,13 +1225,11 @@ const UserController = {
         user: { ...newUser.toObject(), password: undefined },
       });
     } catch (err) {
-      res
-        .status(500)
-        .send({
-          success: false,
-          message: "Internal server error",
-          error: err.message,
-        });
+      res.status(500).send({
+        success: false,
+        message: "Internal server error",
+        error: err.message,
+      });
     }
   },
 
@@ -1539,19 +1727,26 @@ const UserController = {
   getUserOrderHistory: async (req, res) => {
     try {
       const { userId } = req.params;
-      const { page = 1, limit = 20 } = req.query;
+      const { page = 1, limit = 10 } = req.query;
 
-      const user = await User.findById(userId).select("-password");
+      const user = await User.findById(userId).select(
+        "name email phone Wallet"
+      );
       if (!user) {
         return res
           .status(404)
           .send({ success: false, message: "User not found" });
       }
 
+      // Optimized query - select only required fields
       const messages = await Message.find({ userId })
+        .select(
+          "_id type CampaignName cost successCount failedCount createdAt phoneNumbers"
+        )
         .sort({ createdAt: -1 })
         .limit(limit * 1)
-        .skip((page - 1) * limit);
+        .skip((page - 1) * limit)
+        .lean(); // Use lean() for better performance
 
       const total = await Message.countDocuments({ userId });
 
@@ -1566,13 +1761,9 @@ const UserController = {
           _id: msg._id,
           type: msg.type,
           CampaignName: msg.CampaignName,
-          phoneNumbers: msg.phoneNumbers,
           cost: msg.cost,
-          successCount:
-            msg.results?.filter((r) => r.status === 200 || r.status === 201)
-              .length || 0,
-          failedCount:
-            msg.results?.filter((r) => r.error || r.status >= 400).length || 0,
+          successCount: msg.successCount || 0,
+          failedCount: msg.failedCount || 0,
           totalNumbers: msg.phoneNumbers?.length || 0,
           createdAt: msg.createdAt,
         })),
@@ -1591,6 +1782,32 @@ const UserController = {
         message: "Internal server error",
         error: err.message,
       });
+    }
+  },
+
+  getMessageStatus: async (req, res) => {
+    try {
+      const { campaignName, userId } = req.params;
+      
+      const message = await Message.findOne({ CampaignName: campaignName, userId });
+      if (!message) {
+        return res.status(404).send({ success: false, message: "Campaign not found" });
+      }
+
+      const statusCounts = {
+        totalNumbers: message.phoneNumbers?.length || 0,
+        successCount: message.successCount || 0,
+        failedCount: message.failedCount || 0,
+        delivered: message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED").length,
+        read: message.results.filter(r => r.messaestatus === "MESSAGE_READ").length,
+        sent: message.results.filter(r => r.messaestatus === "SEND_MESSAGE_SUCCESS").length,
+        clicked: message.results.filter(r => r.userCliked > 0).length,
+        replied: message.results.filter(r => r.userReplay).length
+      };
+
+      res.status(200).send({ success: true, statusCounts });
+    } catch (error) {
+      res.status(500).send({ success: false, message: "Internal server error", error: error.message });
     }
   },
 
