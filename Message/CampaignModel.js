@@ -16,6 +16,7 @@ const CampaignSchema = new mongoose.Schema({
       "carousel",
       "text-with-action",
       "rcs",
+      "suggestion",
       "webview",
       "dialer-action",
     ],
