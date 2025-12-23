@@ -20,7 +20,7 @@ const CampaignSchema = new mongoose.Schema({
       "webview",
       "dialer-action",
     ],
-    required: true,
+   
   },
   content: { type: mongoose.Schema.Types.Mixed, required: true },
   cost: { type: Number, default: 0 },
