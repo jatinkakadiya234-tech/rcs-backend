@@ -245,9 +245,8 @@ const MessageController = {
   getMessageDetails: async (req, res) => {
     try {
       const { id } = req.params;
-      const { page = 1, limit = 50 } = req.query; // 50 results per page
+      const { page = 1, limit = 50 } = req.query;
 
-      // Get message with paginated results
       const message = await Message.findById(id)
         .select("_id type CampaignName cost successCount failedCount createdAt")
         .lean();
@@ -259,19 +258,22 @@ const MessageController = {
         });
       }
 
-      // Get paginated results separately
-      const fullMessage = await Message.findById(id).select("results").lean();
-      const allResults = fullMessage?.results || [];
-
       const skip = (page - 1) * limit;
-      const paginatedResults = allResults.slice(skip, skip + limit);
-      const totalResults = allResults.length;
+      
+      const fullMessage = await Message.findById(id)
+        .select({ results: { $slice: [skip, parseInt(limit)] } })
+        .lean();
+
+      const totalResults = await Message.findById(id)
+        .select("results")
+        .lean()
+        .then(doc => doc?.results?.length || 0);
 
       res.status(200).send({
         success: true,
         data: {
           ...message,
-          results: paginatedResults,
+          results: fullMessage?.results || [],
           resultsPagination: {
             page: parseInt(page),
             limit: parseInt(limit),
