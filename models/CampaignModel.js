@@ -19,7 +19,7 @@ const CampaignSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['text', 'image', 'video', 'text-with-action']
+    enum: ['text', 'carousel', 'rcs', 'suggestion', 'webview', 'dialer-action', 'text-with-action']
   },
   content: {
     type: mongoose.Schema.Types.Mixed,

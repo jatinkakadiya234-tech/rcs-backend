@@ -11,7 +11,7 @@ const SendMessageController = {
     const { processRetryQueue } = await import("../utils/retryQueue.js");
     
     try {
-      const { type, content, phoneNumbers, userId, campaignName, templateId } = req.body;
+      const { type, content, phoneNumbers=[], userId, campaignName, templateId } = req.body;
 
       if (
         !type ||
