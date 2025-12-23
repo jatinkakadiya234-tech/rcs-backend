@@ -1,5 +1,4 @@
 import Message from "../Message/MessageModel.js";
-import Result from "../models/ResultModel.js";
 import { emitMessageUpdate } from "../socket.js";
 
 export const sendMessagesInBatches = async (
@@ -9,8 +8,7 @@ export const sendMessagesInBatches = async (
   type,
   userId,
   sendJioSms,
-  campaignName,
-  campaignId
+  campaignName
 ) => {
   const BATCH_SIZE = 100;
   const results = [];
@@ -27,41 +25,12 @@ export const sendMessagesInBatches = async (
     const batchPromises = batch.map(async (phoneNumber, index) => {
       try {
         const result = await sendJioSms(phoneNumber, content, token, type);
-        
-        // Store in Result model
-        await Result.create({
-          campaignId,
-          userId,
-          phone: result.phone,
-          messageId: result.messageId,
-          status: result.error ? 'FAILED' : 'SENT',
-          statusCode: result.status,
-          timestamp: new Date(),
-          response: result.response,
-          error: result.error || false,
-          errorMessage: result.error ? result.response?.error : null
-        });
-        
         if (index % 10 === 0) {
           console.log(`✅ Batch ${batchNumber}: Processed ${index + 1}/${batch.length} numbers`);
         }
         return result;
       } catch (error) {
         console.log(`❌ Error sending to ${phoneNumber}:`, error.message);
-        
-        // Store failed result
-        await Result.create({
-          campaignId,
-          userId,
-          phone: phoneNumber,
-          messageId: `failed_${Date.now()}_${Math.random()}`,
-          status: 'FAILED',
-          statusCode: 500,
-          timestamp: new Date(),
-          error: true,
-          errorMessage: error.message
-        });
-        
         return {
           phone: phoneNumber,
           status: 500,
@@ -104,29 +73,12 @@ export const sendMessagesInBatches = async (
       { new: true }
     );
     
-    // Get real-time stats from Result model
-    const campaignStats = await Result.aggregate([
-      { $match: { campaignId } },
-      {
-        $group: {
-          _id: null,
-          totalSent: { $sum: 1 },
-          delivered: { $sum: { $cond: [{ $eq: ["$status", "DELIVERED"] }, 1, 0] } },
-          read: { $sum: { $cond: [{ $eq: ["$status", "READ"] }, 1, 0] } },
-          failed: { $sum: { $cond: [{ $eq: ["$status", "FAILED"] }, 1, 0] } }
-        }
-      }
-    ]);
-    
-    const stats = campaignStats[0] || { totalSent: 0, delivered: 0, read: 0, failed: 0 };
-    
     // Emit real-time update
     emitMessageUpdate(userId, campaignName, {
+      successCount: updatedMessage.successCount,
+      failedCount: updatedMessage.failedCount,
+      totalProcessed: updatedMessage.successCount + updatedMessage.failedCount,
       totalNumbers: phoneNumbers.length,
-      totalSent: stats.totalSent,
-      delivered: stats.delivered,
-      read: stats.read,
-      failed: stats.failed,
       batchNumber,
       totalBatches: Math.ceil(phoneNumbers.length / BATCH_SIZE)
     });

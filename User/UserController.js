@@ -15,9 +15,6 @@ import fs from "fs";
 import https from "https";
 import startSmsWorker from "../workers/sms.worker.js";
 import CampaignModel from "../Message/CampaignModel.js";
-import Result from "../models/ResultModel.js";
-import Campaign from "../models/CampaignModel.js";
-import { emitMessageUpdate } from "../socket.js";
 dotenv.config();
 
 const httpsAgent = new https.Agent({
@@ -504,137 +501,119 @@ const UserController = {
   webhookReceiver: async (req, res) => {
     try {
       const webhookData = req.body;
-      console.log('📥 Jio Webhook Received:', JSON.stringify(webhookData, null, 2));
-      
-      const eventType = webhookData?.entity?.eventType || webhookData?.entityType;
-      const orderId = webhookData.metaData?.orgMsgId;
-      const messageId = webhookData?.entity?.messageId;
-      const suggestionResponse = webhookData?.entity?.suggestionResponse;
-      const userText = webhookData?.entity?.text;
-      
-      if (!messageId) {
-        return res.status(400).send({ success: false, message: "Missing messageId" });
-      }
 
-      // Update in Message.results for real-time status updates
-      const message = await Message.findOne({ "results.messageId": messageId });
-      if (message) {
-        const resultIndex = message.results.findIndex(r => r.messageId === messageId);
-        if (resultIndex !== -1) {
-          message.results[resultIndex].messaestatus = eventType;
-          message.results[resultIndex].error = eventType === "SEND_MESSAGE_FAILURE";
-          
-          // Handle suggestion clicks
-          if (suggestionResponse) {
-            message.results[resultIndex].userCliked = (message.results[resultIndex].userCliked || 0) + 1;
-            if (!message.results[resultIndex].suggestionResponse) {
-              message.results[resultIndex].suggestionResponse = [];
-            }
-            message.results[resultIndex].suggestionResponse.push({
-              ...suggestionResponse,
-              clickedAt: new Date().toISOString(),
-              clickNumber: message.results[resultIndex].userCliked
-            });
-          }
-          
-          // Handle user replies
-          if (userText) {
-            message.results[resultIndex].userReplay = userText;
-          }
-          
-          // Update counts
-          message.successCount = message.results.filter(r => 
-            r.messaestatus === "MESSAGE_DELIVERED" || 
-            r.messaestatus === "MESSAGE_READ" || 
-            r.messaestatus === "SEND_MESSAGE_SUCCESS"
-          ).length;
-          message.failedCount = message.results.filter(r => 
-            r.messaestatus === "SEND_MESSAGE_FAILURE"
-          ).length;
-          
-          await message.save();
-          
-          // Emit real-time update
-          emitMessageUpdate(message.userId, message.CampaignName, {
-            successCount: message.successCount,
-            failedCount: message.failedCount,
-            delivered: message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED").length,
-            read: message.results.filter(r => r.messaestatus === "MESSAGE_READ").length,
-            clicked: message.results.filter(r => r.userCliked > 0).length,
-            replied: message.results.filter(r => r.userReplay).length,
-            messageId,
-            status: eventType,
-            phone: message.results[resultIndex].phone,
-            ...(suggestionResponse && { clickData: suggestionResponse }),
-            ...(userText && { replyText: userText })
-          });
-        }
-      }
-
-      console.log(`✅ Status updated: ${messageId} -> ${eventType}`);
-      res.status(200).send({ success: true, message: "Webhook processed" });
-      
-      if (!messageId) {
-        return res.status(400).send({ success: false, message: "Missing messageId" });
-      }
-
-      // Find and update result in Result model
-      const result = await Result.findOneAndUpdate(
-        { messageId },
-        {
-          status: status?.toUpperCase() || 'DELIVERED',
-          ...(status === 'DELIVERED' && { deliveredAt: new Date(timestamp) }),
-          ...(status === 'READ' && { readAt: new Date(timestamp) })
-        },
-        { new: true }
+      console.log(
+        "📥 Jio Webhook Received:",
+        JSON.stringify(webhookData, null, 2)
       );
 
-      if (!result) {
-        console.log(`⚠️ Result not found for messageId: ${messageId}`);
-        return res.status(404).send({ success: false, message: "Result not found" });
-      }
+      const eventType =
+        webhookData?.entity?.eventType || webhookData?.entityType;
+      const orgMsgId = webhookData?.metaData?.orgMsgId;
+      const userPhoneNumber = webhookData?.userPhoneNumber;
 
-      // Get updated campaign stats
-      const campaignStats = await Result.aggregate([
-        { $match: { campaignId: result.campaignId } },
-        {
-          $group: {
-            _id: null,
-            totalSent: { $sum: 1 },
-            delivered: { $sum: { $cond: [{ $eq: ["$status", "DELIVERED"] }, 1, 0] } },
-            read: { $sum: { $cond: [{ $eq: ["$status", "READ"] }, 1, 0] } },
-            failed: { $sum: { $cond: [{ $eq: ["$status", "FAILED"] }, 1, 0] } }
+      // For USER_MESSAGE, use orgMsgId to find original message
+      if (eventType === "USER_MESSAGE" && orgMsgId) {
+        const message = await Message.findOne({
+          "results.messageId": orgMsgId,
+        });
+
+        if (message) {
+          const resultIndex = message.results.findIndex(
+            (r) => r.messageId === orgMsgId
+          );
+          if (resultIndex !== -1) {
+            message.results[resultIndex].userReplay =
+              webhookData?.entity?.text || null;
+            message.results[resultIndex].entityType =
+              webhookData?.entityType || null;
+
+            // Handle suggestion response - track clicks
+            if (webhookData?.entity?.suggestionResponse) {
+              // Increment click count each time suggestion is clicked
+              message.results[resultIndex].userCliked =
+                (message.results[resultIndex].userCliked || 0) + 1;
+              console.log(
+                `🎯 Suggestion clicked ${message.results[resultIndex].userCliked} time(s)`
+              );
+
+              // Store the suggestion response
+              if (
+                !Array.isArray(message.results[resultIndex].suggestionResponse)
+              ) {
+                message.results[resultIndex].suggestionResponse = [];
+              }
+              message.results[resultIndex].suggestionResponse.push({
+                ...webhookData?.entity?.suggestionResponse,
+                clickedAt: new Date().toISOString(),
+                clickNumber: message.results[resultIndex].userCliked,
+              });
+            }
+
+            await message.save();
+            console.log(
+              `✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`
+            );
           }
         }
-      ]);
+      } else {
+        // For other events, use entity.messageId
+        const messageId = webhookData?.entity?.messageId;
 
-      const stats = campaignStats[0] || { totalSent: 0, delivered: 0, read: 0, failed: 0 };
+        if (messageId) {
+          const message = await Message.findOne({
+            "results.messageId": messageId,
+          });
 
-      // Update campaign stats
-      await Campaign.findByIdAndUpdate(result.campaignId, {
-        'stats.sent': stats.totalSent,
-        'stats.delivered': stats.delivered,
-        'stats.read': stats.read,
-        'stats.failed': stats.failed
-      });
+          if (message) {
+            const resultIndex = message.results.findIndex(
+              (r) => r.messageId === messageId
+            );
+            if (resultIndex !== -1) {
+              const oldStatus = message.results[resultIndex].messaestatus;
+              message.results[resultIndex].messaestatus = eventType;
+              message.results[resultIndex].error =
+                webhookData?.entity?.error ||
+                eventType === "SEND_MESSAGE_FAILURE";
+              message.results[resultIndex].errorMessage =
+                webhookData?.entity?.error?.message || null;
 
-      // Emit real-time update
-      emitMessageUpdate(result.userId, `campaign_${result.campaignId}`, {
-        totalSent: stats.totalSent,
-        delivered: stats.delivered,
-        read: stats.read,
-        failed: stats.failed,
-        messageId,
-        status: result.status,
-        phone: result.phone
-      });
+              // If message failed and wasn't already failed, refund user
+              if (
+                eventType === "SEND_MESSAGE_FAILURE" &&
+                oldStatus !== "SEND_MESSAGE_FAILURE"
+              ) {
+                await User.findByIdAndUpdate(message.userId, {
+                  $inc: { Wallet: 1 },
+                });
+                console.log(
+                  `💰 Refunded ₹1 to user ${message.userId} for failed message ${messageId}`
+                );
+              }
 
-      console.log(`✅ Status updated: ${messageId} -> ${result.status}`);
-      res.status(200).send({ success: true, message: "Webhook processed" });
+              message.successCount = message.results.filter(
+                (r) =>
+                  r.messaestatus === "MESSAGE_DELIVERED" ||
+                  r.messaestatus === "MESSAGE_READ" ||
+                  r.messaestatus === "SEND_MESSAGE_SUCCESS"
+              ).length;
+              message.failedCount = message.results.filter(
+                (r) => r.messaestatus === "SEND_MESSAGE_FAILURE"
+              ).length;
 
+              await message.save();
+              console.log(
+                `✅ Updated message ${messageId} with status: ${eventType}`
+              );
+            }
+          }
+        }
+      }
+
+      res.status(200).json({ success: true, message: "Webhook received" });
     } catch (error) {
-      console.error('❌ Webhook error:', error);
-      res.status(500).send({ success: false, message: "Webhook processing failed" });
+      console.error("❌ Webhook Error:", error);
+      res.status(500).json({ success: false, error: error.message });
     }
   },
 
@@ -1782,32 +1761,6 @@ if(createCamian) return res.status(200).send({
         message: "Internal server error",
         error: err.message,
       });
-    }
-  },
-
-  getMessageStatus: async (req, res) => {
-    try {
-      const { campaignName, userId } = req.params;
-      
-      const message = await Message.findOne({ CampaignName: campaignName, userId });
-      if (!message) {
-        return res.status(404).send({ success: false, message: "Campaign not found" });
-      }
-
-      const statusCounts = {
-        totalNumbers: message.phoneNumbers?.length || 0,
-        successCount: message.successCount || 0,
-        failedCount: message.failedCount || 0,
-        delivered: message.results.filter(r => r.messaestatus === "MESSAGE_DELIVERED").length,
-        read: message.results.filter(r => r.messaestatus === "MESSAGE_READ").length,
-        sent: message.results.filter(r => r.messaestatus === "SEND_MESSAGE_SUCCESS").length,
-        clicked: message.results.filter(r => r.userCliked > 0).length,
-        replied: message.results.filter(r => r.userReplay).length
-      };
-
-      res.status(200).send({ success: true, statusCounts });
-    } catch (error) {
-      res.status(500).send({ success: false, message: "Internal server error", error: error.message });
     }
   },
 

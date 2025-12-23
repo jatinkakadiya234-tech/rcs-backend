@@ -115,8 +115,7 @@ const SendMessageController = {
           type,
           userId,
           sendJioSms,
-          campaignName,
-          createCampaign._id
+          campaignName
         );
         await processRetryQueue(userId, sendJioSms);
       });
