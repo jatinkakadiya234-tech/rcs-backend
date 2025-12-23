@@ -87,6 +87,7 @@ const SendMessageController = {
         content,
         cost: totalCost,
         results: []
+        
       });
       console.log('Message record created successfully');
 

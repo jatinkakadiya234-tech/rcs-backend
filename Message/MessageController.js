@@ -245,10 +245,10 @@ const MessageController = {
   getMessageDetails: async (req, res) => {
     try {
       const { id } = req.params;
-      const { page = 1, limit = 50 } = req.query;
+      const { page = 1, limit = 10 } = req.query;
 
       const message = await Message.findById(id)
-        .select("_id type CampaignName cost successCount failedCount createdAt")
+        .select("_id type CampaignName cost successCount failedCount   ")
         .lean();
 
       if (!message) {
@@ -269,11 +269,19 @@ const MessageController = {
         .lean()
         .then(doc => doc?.results?.length || 0);
 
+      const filteredResults = fullMessage?.results?.map(r => ({
+        phone: r?.phone,
+        status: r?.status,
+        messaestatus:r?.messaestatus,
+        errorMessage:r?.errorMessage || null,
+        suggestionResponse:r?.suggestionResponse || []
+      })) || [];
+
       res.status(200).send({
         success: true,
         data: {
           ...message,
-          results: fullMessage?.results || [],
+          results: filteredResults,
           resultsPagination: {
             page: parseInt(page),
             limit: parseInt(limit),
