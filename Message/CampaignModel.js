@@ -2,12 +2,23 @@ import mongoose from "mongoose";
 
 const CampaignSchema = new mongoose.Schema({
   campaignName: { type: String, required: true },
-  templateId: { type:mongoose.Schema.Types.ObjectId,ref:"tbl_Templates",required:true},
+  templateId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "tbl_Templates",
+    required: true,
+  },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   audienceCount: { type: Number, required: true },
   type: {
     type: String,
-    enum: ["text", "carousel", "text-with-action", "rcs", "webview", "dialer-action"],
+    enum: [
+      "text",
+      "carousel",
+      "text-with-action",
+      "rcs",
+      "webview",
+      "dialer-action",
+    ],
     required: true,
   },
   content: { type: mongoose.Schema.Types.Mixed, required: true },
