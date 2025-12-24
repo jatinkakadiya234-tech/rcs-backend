@@ -246,7 +246,6 @@ const MessageController = {
     try {
       const { userId } = req.params;
 
-      // Check if userId is valid ObjectId
       if (!mongoose.Types.ObjectId.isValid(userId)) {
         return res.status(400).json({
           success: false,
@@ -254,45 +253,56 @@ const MessageController = {
         });
       }
 
-      // Convert userId to ObjectId
       const userObjectId = new mongoose.Types.ObjectId(userId);
 
-      // Find all messages for this user
-      const messages = await Message.find({ userId: userId }).lean();
-      
-      // Calculate stats from the messages
-      let totalMessages = messages.length;
-      let totalSuccess = 0;
-      let totalFailed = 0;
-      let messagesWithSuccess = 0;
-      let messagesWithFailures = 0;
-      let pendingMessages = 0;
+      // Use aggregation for better performance
+      const [stats, templateCount] = await Promise.all([
+        Message.aggregate([
+          { $match: { userId: userObjectId } },
+          {
+            $group: {
+              _id: null,
+              totalMessages: { $sum: 1 },
+              totalSuccess: { $sum: "$successCount" },
+              totalFailed: { $sum: "$failedCount" },
+              messagesWithSuccess: {
+                $sum: { $cond: [{ $gt: ["$successCount", 0] }, 1, 0] },
+              },
+              messagesWithFailures: {
+                $sum: { $cond: [{ $gt: ["$failedCount", 0] }, 1, 0] },
+              },
+              pendingMessages: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $eq: ["$successCount", 0] }, { $eq: ["$failedCount", 0] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ]),
+        Template.countDocuments({ userId: userObjectId }),
+      ]);
 
-      messages.forEach(message => {
-        totalSuccess += message.successCount || 0;
-        totalFailed += message.failedCount || 0;
-        
-        if ((message.successCount || 0) > 0) {
-          messagesWithSuccess++;
-        }
-        if ((message.failedCount || 0) > 0) {
-          messagesWithFailures++;
-        }
-        if ((message.successCount || 0) === 0 && (message.failedCount || 0) === 0) {
-          pendingMessages++;
-        }
-      });
-
-      // Get template count
-      const templateCount = await Template.countDocuments({ userId: userId });
+      const result = stats[0] || {
+        totalMessages: 0,
+        totalSuccess: 0,
+        totalFailed: 0,
+        messagesWithSuccess: 0,
+        messagesWithFailures: 0,
+        pendingMessages: 0,
+      };
 
       try {
         const io = getIO();
         io.to(`user_${userId}`).emit('userStatsUpdated', { 
-          totalMessages,
-          failedMessages: messagesWithFailures,
-          pendingMessages,
-          sentMessages: messagesWithSuccess
+          // totalMessages: result.totalMessages,
+          failedMessages: result.messagesWithFailures,
+          pendingMessages: result.pendingMessages,
+          sentMessages: result.messagesWithSuccess,
+            totalMessages:result.totalFailed+ result.totalSuccess,
         });
       } catch (socketErr) {
         console.log('Socket emit failed:', socketErr.message);
@@ -301,14 +311,14 @@ const MessageController = {
       res.status(200).send({
         success: true,
         data: {
-          totalMessages,
-          failedMessages: messagesWithFailures,
-          pendingMessages,
-          sentMessages: messagesWithSuccess,
+          failedMessages: result.messagesWithFailures,
+          pendingMessages: result.pendingMessages,
+          sentMessages: result.messagesWithSuccess,
           sendtoteltemplet: templateCount,
-          totalCampaigns: totalMessages,
-          totalSuccessCount: totalSuccess,
-          totalFailedCount: totalFailed,
+          totalCampaigns: result.totalMessages,
+          totalSuccessCount: result.totalSuccess,
+          totalFailedCount: result.totalFailed,
+          totalMessages:result.totalFailed+ result.totalSuccess,
         },
       });
     } catch (err) {
