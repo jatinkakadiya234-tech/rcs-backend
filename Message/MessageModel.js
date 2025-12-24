@@ -31,11 +31,7 @@ const MessageSchema = new mongoose.Schema({
       error: { type: mongoose.Schema.Types.Mixed },
       messaestatus: String,
       errorMessage: String,
-      userReplay: Number,
-      userCliked: Number,
-      entityType: String,
-      totelDilivered: Number,
-      totalRead: Number,
+   
       suggestionResponse: [{ type: mongoose.Schema.Types.Mixed }]
       
     },
@@ -47,6 +43,13 @@ const MessageSchema = new mongoose.Schema({
   errorMessage: { type: String },
   errorDetails: [{ type: mongoose.Schema.Types.Mixed }],
   createdAt: { type: Date, default: Date.now },
+  userReplyCount: { type: Number, default: 0 },
+userClickCount: { type: Number, default: 0 },
+entityType: { type: String },
+totalDelivered: { type: Number, default: 0 },
+totalRead: { type: Number, default: 0 },
+
+     
 });
 
 // 🚀 Performance Indexes

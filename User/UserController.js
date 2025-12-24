@@ -523,6 +523,153 @@ const UserController = {
 // },
 
 
+// webhookReceiver: async (req, res) => {
+//   try {
+//     const data = req.body;
+
+//     console.log("📥 Jio Webhook Received:", JSON.stringify(data, null, 2));
+
+//     // 🔹 Common fields
+//     const eventType = data?.entity?.eventType || data?.entityType;
+//     const orgMsgId = data?.metaData?.orgMsgId; // for USER_MESSAGE
+//     const messageId = data?.entity?.messageId; // for delivery/read/fail
+//     const userPhoneNumber = data?.userPhoneNumber;
+
+//     /* =====================================================
+//        🟢 CASE 1 : USER MESSAGE (User Reply / Button Click)
+//     ====================================================== */
+//     if (eventType === "USER_MESSAGE" && orgMsgId) {
+//       const message = await Message.findOne({
+//         "results.messageId": orgMsgId,
+//       });
+
+//       if (!message) {
+//         return res.status(200).json({ success: true });
+//       }
+
+//       const index = message.results.findIndex(
+//         (r) => r.messageId === orgMsgId
+//       );
+//       if (index === -1) {
+//         return res.status(200).json({ success: true });
+//       }
+
+//       const result = message.results[index];
+
+//       // ✍️ Save user reply text
+//       result.userReplay = data?.entity?.text || null;
+//       result.entityType = data?.entityType || null;
+
+//       // 🔢 Reply count
+//       result.replyCount = (result.replyCount || 0) + 1;
+
+//       // 🎯 Suggestion / Button click
+//       if (data?.entity?.suggestionResponse) {
+//         result.userCliked = (result.userCliked || 0) + 1;
+
+//         if (!Array.isArray(result.suggestionResponse)) {
+//           result.suggestionResponse = [];
+//         }
+
+//         result.suggestionResponse.push({
+//           ...data.entity.suggestionResponse,
+//           clickedAt: new Date(),
+//           clickNumber: result.userCliked,
+//         });
+//       }
+
+//       await message.save();
+
+//       console.log(
+//         `✅ USER_MESSAGE saved | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
+//       );
+
+//       return res.status(200).json({ success: true });
+//     }
+
+//     /* =====================================================
+//        🔵 CASE 2 : STATUS EVENTS (DELIVERED / READ / FAILED)
+//     ====================================================== */
+//     if (messageId) {
+//       const message = await Message.findOne({
+//         "results.messageId": messageId,
+//       });
+
+//       if (!message) {
+//         return res.status(200).json({ success: true });
+//       }
+
+//       const index = message.results.findIndex(
+//         (r) => r.messageId === messageId
+//       );
+//       if (index === -1) {
+//         return res.status(200).json({ success: true });
+//       }
+
+//       const result = message.results[index];
+//       const oldStatus = result.messaestatus;
+
+//       // 🔄 Update status
+//       result.messaestatus = eventType;
+//       result.error = data?.entity?.error || false;
+//       result.errorMessage = data?.entity?.error?.message || null;
+
+//       // 📦 Delivered count
+//       if (
+//         eventType === "MESSAGE_DELIVERED" &&
+//         oldStatus !== "MESSAGE_DELIVERED"
+//       ) {
+//         result.deliveredCount = (result.deliveredCount || 0) + 1;
+//       }
+
+//       // 👁 Read count
+//       if (eventType === "MESSAGE_READ" && oldStatus !== "MESSAGE_READ") {
+//         result.readCount = (result.readCount || 0) + 1;
+//       }
+
+//       // ❌ Failure → Refund wallet
+//       if (
+//         eventType === "SEND_MESSAGE_FAILURE" &&
+//         oldStatus !== "SEND_MESSAGE_FAILURE"
+//       ) {
+//         await User.findByIdAndUpdate(message.userId, {
+//           $inc: { Wallet: 1 },
+//         });
+
+//         console.log(`💰 Wallet refunded for message ${messageId}`);
+//       }
+
+//       // 📊 Recalculate success / failed
+//       message.successCount = message.results.filter((r) =>
+//         ["MESSAGE_DELIVERED", "MESSAGE_READ", "SEND_MESSAGE_SUCCESS"].includes(
+//           r.messaestatus
+//         )
+//       ).length;
+
+//       message.failedCount = message.results.filter(
+//         (r) => r.messaestatus === "SEND_MESSAGE_FAILURE"
+//       ).length;
+
+//       await message.save();
+
+//       console.log(`✅ Status updated | MsgId: ${messageId} → ${eventType}`);
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Webhook processed successfully",
+//     });
+//   } catch (error) {
+//     console.error("❌ Webhook Error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// },
+
+
+
 webhookReceiver: async (req, res) => {
   try {
     const data = req.body;
@@ -531,12 +678,12 @@ webhookReceiver: async (req, res) => {
 
     // 🔹 Common fields
     const eventType = data?.entity?.eventType || data?.entityType;
-    const orgMsgId = data?.metaData?.orgMsgId; // for USER_MESSAGE
-    const messageId = data?.entity?.messageId; // for delivery/read/fail
+    const orgMsgId = data?.metaData?.orgMsgId; // USER_MESSAGE
+    const messageId = data?.entity?.messageId; // STATUS EVENTS
     const userPhoneNumber = data?.userPhoneNumber;
 
     /* =====================================================
-       🟢 CASE 1 : USER MESSAGE (User Reply / Button Click)
+       🟢 CASE 1 : USER MESSAGE (Reply / Button Click)
     ====================================================== */
     if (eventType === "USER_MESSAGE" && orgMsgId) {
       const message = await Message.findOne({
@@ -556,32 +703,22 @@ webhookReceiver: async (req, res) => {
 
       const result = message.results[index];
 
-      // ✍️ Save user reply text
-      result.userReplay = data?.entity?.text || null;
+      // ✍️ Save last user reply (optional detail)
       result.entityType = data?.entityType || null;
+      result.userReplay = data?.entity?.text || null;
 
-      // 🔢 Reply count
-      result.replyCount = (result.replyCount || 0) + 1;
+      // 🔢 GLOBAL reply count
+      message.totalReplies = (message.totalReplies || 0) + 1;
 
-      // 🎯 Suggestion / Button click
+      // 🎯 Button / suggestion click (GLOBAL)
       if (data?.entity?.suggestionResponse) {
-        result.userCliked = (result.userCliked || 0) + 1;
-
-        if (!Array.isArray(result.suggestionResponse)) {
-          result.suggestionResponse = [];
-        }
-
-        result.suggestionResponse.push({
-          ...data.entity.suggestionResponse,
-          clickedAt: new Date(),
-          clickNumber: result.userCliked,
-        });
+        message.totalClicks = (message.totalClicks || 0) + 1;
       }
 
       await message.save();
 
       console.log(
-        `✅ USER_MESSAGE saved | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
+        `✅ USER_MESSAGE | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
       );
 
       return res.status(200).json({ success: true });
@@ -611,48 +748,57 @@ webhookReceiver: async (req, res) => {
 
       // 🔄 Update status
       result.messaestatus = eventType;
-      result.error = data?.entity?.error || false;
+      result.error = !!data?.entity?.error;
       result.errorMessage = data?.entity?.error?.message || null;
 
-      // 📦 Delivered count
+      /* ---------- 📦 DELIVERED ---------- */
       if (
         eventType === "MESSAGE_DELIVERED" &&
         oldStatus !== "MESSAGE_DELIVERED"
       ) {
-        result.deliveredCount = (result.deliveredCount || 0) + 1;
+        message.totalDelivered = (message.totalDelivered || 0) + 1;
       }
 
-      // 👁 Read count
-      if (eventType === "MESSAGE_READ" && oldStatus !== "MESSAGE_READ") {
-        result.readCount = (result.readCount || 0) + 1;
+      /* ---------- 👁 READ ---------- */
+      if (
+        eventType === "MESSAGE_READ" &&
+        oldStatus !== "MESSAGE_READ"
+      ) {
+        message.totalRead = (message.totalRead || 0) + 1;
       }
 
-      // ❌ Failure → Refund wallet
+      /* ---------- ❌ FAILED ---------- */
       if (
         eventType === "SEND_MESSAGE_FAILURE" &&
         oldStatus !== "SEND_MESSAGE_FAILURE"
       ) {
+        message.failedCount = (message.failedCount || 0) + 1;
+
+        // 💰 Wallet refund
         await User.findByIdAndUpdate(message.userId, {
           $inc: { Wallet: 1 },
         });
 
-        console.log(`💰 Wallet refunded for message ${messageId}`);
+        console.log(`💰 Wallet refunded | MsgId: ${messageId}`);
       }
 
-      // 📊 Recalculate success / failed
-      message.successCount = message.results.filter((r) =>
+      /* ---------- ✅ SUCCESS ---------- */
+      if (
         ["MESSAGE_DELIVERED", "MESSAGE_READ", "SEND_MESSAGE_SUCCESS"].includes(
-          r.messaestatus
+          eventType
+        ) &&
+        !["MESSAGE_DELIVERED", "MESSAGE_READ", "SEND_MESSAGE_SUCCESS"].includes(
+          oldStatus
         )
-      ).length;
-
-      message.failedCount = message.results.filter(
-        (r) => r.messaestatus === "SEND_MESSAGE_FAILURE"
-      ).length;
+      ) {
+        message.successCount = (message.successCount || 0) + 1;
+      }
 
       await message.save();
 
-      console.log(`✅ Status updated | MsgId: ${messageId} → ${eventType}`);
+      console.log(
+        `✅ STATUS UPDATED | MsgId: ${messageId} → ${eventType}`
+      );
     }
 
     return res.status(200).json({
@@ -667,6 +813,7 @@ webhookReceiver: async (req, res) => {
     });
   }
 },
+
 
   sendMessage: async (req, res) => {
     // const { sendMessagesInBatches } = await import("../utils/batchSender.js");
