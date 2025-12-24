@@ -34,7 +34,7 @@ export const sendJioSms = async (phoneNumber, content, token, type, retries = 2)
         status: response.status,
         response: response.data,
         messageId,
-        timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         result: "Message Sent Successfully",
         type: type,
         statusText: response.statusText,
@@ -49,7 +49,7 @@ export const sendJioSms = async (phoneNumber, content, token, type, retries = 2)
           status: error.response?.status || 500,
           response: { error: error.response?.data || error.message },
           error: true,
-          timestamp: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
           attempt: attempt + 1,
           messaestatus: "SEND_MESSAGE_FAILURE"
         };

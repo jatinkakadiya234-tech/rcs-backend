@@ -45,7 +45,7 @@ export const sendMessagesInBatches = async (
           status: 500,
           error: true,
           response: { error: error.message },
-          timestamp: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
           messaestatus: "SEND_MESSAGE_FAILURE"
         };
       }
@@ -58,7 +58,7 @@ export const sendMessagesInBatches = async (
         status: 500,
         error: true,
         response: { error: 'Promise rejected' },
-        timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         messaestatus: "SEND_MESSAGE_FAILURE"
       }
     );

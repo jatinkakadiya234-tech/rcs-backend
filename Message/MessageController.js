@@ -144,7 +144,7 @@ const MessageController = {
       // Optimized query with field selection
       const messages = await Message.find()
         .select(
-          "_id type CampaignName cost successCount failedCount createdAt userId"
+          "_id type CampaignName cost successCount failedCount -createdAt userId"
         )
         .sort({ createdAt: -1 })
         .limit(parseInt(limit))
