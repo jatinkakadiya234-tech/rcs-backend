@@ -132,63 +132,6 @@ const checkBulkCapability = async (phoneNumbers, token) => {
   }
 };
 
-// --- ✅ Optimized Send SMS with retry logic ---
-// const sendJioSms = async (phoneNumber, content, token, type, retries = 2) => {
-//   for (let attempt = 0; attempt <= retries; attempt++) {
-//     try {
-//       let formattedPhone = phoneNumber
-//         .toString()
-//         .trim()
-//         .replace(/[^0-9+]/g, "");
-//       if (!formattedPhone.startsWith("+91"))
-//         formattedPhone = "+91" + formattedPhone.replace(/^0+/, "");
-
-//       const messageId = `msg_${uuidv4()}`;
-//       const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
-
-//       const payload = {
-//         botId: process.env.JIO_ASSISTANT_ID,
-//         content: content,
-//       };
-
-//       const response = await axios.post(url, payload, {
-//         headers: {
-//           Authorization: `Bearer ${token}`,
-//           "Content-Type": "application/json",
-//         },
-//         timeout: 15000, // Increased timeout
-//       });
-
-//       return {
-//         phone: formattedPhone,
-//         status: response.status,
-//         response: response.data,
-//         messageId,
-//         timestamp: new Date().toISOString(),
-//         result: "Message Sent Successfully",
-//         type: type,
-//         statusText: response.statusText,
-//         attempt: attempt + 1,
-//         messaestatus: "SEND_MESSAGE_SUCCESS"
-//       };
-//     } catch (error) {
-//       if (attempt === retries) {
-//         console.error(`❌ Final attempt failed for ${phoneNumber}:`, error.response?.data || error.message);
-//         return {
-//           phone: phoneNumber,
-//           status: error.response?.status || 500,
-//           response: { error: error.response?.data || error.message },
-//           error: true,
-//           timestamp: new Date().toISOString(),
-//           attempt: attempt + 1,
-//           messaestatus: "SEND_MESSAGE_FAILURE"
-//         };
-//       }
-//       // Wait before retry
-//       await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-//     }
-//   }
-// };
 
 const sendJioSms = async (phoneNumber, content, token, type, retries = 2) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -247,79 +190,7 @@ const sendJioSms = async (phoneNumber, content, token, type, retries = 2) => {
   }
 };
 
-// export const sendBulkJioSms = async ({
-//   phoneNumbers = [],
-//   content,
-//   token,
-//   type
-// }) => {
-//   const BATCH_SIZE = 30;   // 🔥 load control
-//   const DELAY = 1000;      // 1 sec gap
 
-//   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-//   let results = [];
-
-//   for (let i = 0; i < phoneNumbers.length; i += BATCH_SIZE) {
-//     const batch = phoneNumbers.slice(i, i + BATCH_SIZE);
-
-//     // 👇 batch send (parallel but limited)
-//     await Promise.all(
-//       batch.map(async (phoneNumber) => {
-//         try {
-//           let formattedPhone = phoneNumber
-//             .toString()
-//             .replace(/[^0-9]/g, "");
-
-//           if (!formattedPhone.startsWith("91")) {
-//             formattedPhone = "91" + formattedPhone;
-//           }
-
-//           const messageId = `msg_${uuidv4()}`;
-//           const url = `https://api.businessmessaging.jio.com/v1/messaging/users/+${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
-
-//           await axios.post(
-//             url,
-//             {
-//               botId: process.env.JIO_ASSISTANT_ID,
-//               content
-//             },
-//             {
-//               headers: {
-//                 Authorization: `Bearer ${token}`,
-//                 "Content-Type": "application/json"
-//               },
-//               timeout: 60000
-//             }
-//           );
-
-//           results.push({
-//             phone: formattedPhone,
-//             status: "SENT",
-//             type
-//           });
-//         } catch (err) {
-//           results.push({
-//             phone: phoneNumber,
-//             status: "FAILED",
-//             error: err.message,
-//             type
-//           });
-//         }
-//       })
-//     );
-
-//     // ⏸️ delay between batches
-//     await sleep(DELAY);
-//   }
-
-//   return {
-//     success: true,
-//     total: phoneNumbers.length,
-//     sent: results.filter(r => r.status === "SENT").length,
-//     failed: results.filter(r => r.status === "FAILED").length
-//   };
-// };
 
 // --- Controller Object ---
 const UserController = {
@@ -434,28 +305,6 @@ const UserController = {
     }
   },
 
-  // sendNormalSms: async (req, res) => {
-  //   try {
-  //     const { title, phoneNumbers, tableName, campaignName } = req.body;
-  //     if (!title || !Array.isArray(phoneNumbers))
-  //       return res
-  //         .status(400)
-  //         .send({ message: "Title and phoneNumbers required" });
-
-  //     const token = await fetchJioToken();
-  //     const results = await Promise.all(
-  //       phoneNumbers.map((phone) =>
-  //         sendJioSms(phone, title, token, tableName, campaignName)
-  //       )
-  //     );
-
-  //     res.status(200).send({ message: "SMS sending completed", results });
-  //   } catch (err) {
-  //     res
-  //       .status(500)
-  //       .send({ message: "Internal server error", error: err.message });
-  //   }
-  // },
   updateProfile: async (req, res) => {
     try {
       const { userId } = req.params;
@@ -528,6 +377,10 @@ const UserController = {
             message.results[resultIndex].entityType =
               webhookData?.entityType || null;
 
+            // Increment reply count each time user replies
+            message.results[resultIndex].replyCount =
+              (message.results[resultIndex].replyCount || 0) + 1;
+
             // Handle suggestion response - track clicks
             if (webhookData?.entity?.suggestionResponse) {
               // Increment click count each time suggestion is clicked
@@ -552,7 +405,7 @@ const UserController = {
 
             await message.save();
             console.log(
-              `✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber}`
+              `✅ User reply saved for message ${orgMsgId} from ${userPhoneNumber} (Reply #${message.results[resultIndex].replyCount})`
             );
           }
         }
@@ -577,6 +430,18 @@ const UserController = {
                 eventType === "SEND_MESSAGE_FAILURE";
               message.results[resultIndex].errorMessage =
                 webhookData?.entity?.error?.message || null;
+
+              // Track delivered count
+              if (eventType === "MESSAGE_DELIVERED" && oldStatus !== "MESSAGE_DELIVERED") {
+                message.results[resultIndex].deliveredCount =
+                  (message.results[resultIndex].deliveredCount || 0) + 1;
+              }
+
+              // Track read count
+              if (eventType === "MESSAGE_READ" && oldStatus !== "MESSAGE_READ") {
+                message.results[resultIndex].readCount =
+                  (message.results[resultIndex].readCount || 0) + 1;
+              }
 
               // If message failed and wasn't already failed, refund user
               if (
