@@ -79,10 +79,40 @@ const MessageController = {
   getMessageById: async (req, res) => {
     const start = process.hrtime();
     const message = await Message.findById(req.params.id)
-      .select("results")
+      .select("results successCount failedCount")
       .lean();
 
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found"
+      });
+    }
+
+    // Count based on messaestatus
+    let totalSent = 0;
+    let totalDelivered = 0;
+    let totalRead = 0;
+    let totalFailed = 0;
+
+    if (message.results && message.results.length > 0) {
+      message.results.forEach(result => {
+        const status = result.messaestatus;
+        
+        if (status === "SEND_MESSAGE_SUCCESS") {
+          totalSent++;
+        } else if (status === "DELIVERED") {
+          totalDelivered++;
+        } else if (status === "READ" || status === "READ_MESSAGE") {
+          totalRead++;
+        } else if (status && status.includes("FAIL")) {
+          totalFailed++;
+        }
+      });
+    }
+
     const diff = process.hrtime(start);
+    
     try {
       const io = getIO();
       io.emit('messageViewed', { messageId: req.params.id });
@@ -92,7 +122,14 @@ const MessageController = {
 
     res.json({
       success: true,
-      data: message,
+      data: {
+        ...message,
+        totalSent,
+        totalDelivered,
+        totalRead,
+        totalFailed,
+        totalResults: message.results?.length || 0
+      },
       executionTimeMs: (diff[0] * 1e3 + diff[1] / 1e6).toFixed(2) + " ms",
     });
   },
@@ -209,56 +246,53 @@ const MessageController = {
     try {
       const { userId } = req.params;
 
-      // Optimized aggregation queries
-      const [messageStats, templateCount] = await Promise.all([
-        Message.aggregate([
-          { $match: { userId: userId } },
-          {
-            $group: {
-              _id: null,
-              totalMessages: { $sum: 1 },
-              totalSuccess: { $sum: "$successCount" },
-              totalFailed: { $sum: "$failedCount" },
-              messagesWithSuccess: {
-                $sum: { $cond: [{ $gt: ["$successCount", 0] }, 1, 0] },
-              },
-              messagesWithFailures: {
-                $sum: { $cond: [{ $gt: ["$failedCount", 0] }, 1, 0] },
-              },
-              pendingMessages: {
-                $sum: {
-                  $cond: [
-                    {
-                      $and: [
-                        { $eq: ["$successCount", 0] },
-                        { $eq: ["$failedCount", 0] },
-                      ],
-                    },
-                    1,
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-        ]),
-        Template.countDocuments({ userId }),
-      ]);
+      // Check if userId is valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid userId",
+        });
+      }
 
-      const stats = messageStats[0] || {
-        totalMessages: 0,
-        messagesWithSuccess: 0,
-        messagesWithFailures: 0,
-        pendingMessages: 0,
-      };
+      // Convert userId to ObjectId
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+
+      // Find all messages for this user
+      const messages = await Message.find({ userId: userId }).lean();
+      
+      // Calculate stats from the messages
+      let totalMessages = messages.length;
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      let messagesWithSuccess = 0;
+      let messagesWithFailures = 0;
+      let pendingMessages = 0;
+
+      messages.forEach(message => {
+        totalSuccess += message.successCount || 0;
+        totalFailed += message.failedCount || 0;
+        
+        if ((message.successCount || 0) > 0) {
+          messagesWithSuccess++;
+        }
+        if ((message.failedCount || 0) > 0) {
+          messagesWithFailures++;
+        }
+        if ((message.successCount || 0) === 0 && (message.failedCount || 0) === 0) {
+          pendingMessages++;
+        }
+      });
+
+      // Get template count
+      const templateCount = await Template.countDocuments({ userId: userId });
 
       try {
         const io = getIO();
         io.to(`user_${userId}`).emit('userStatsUpdated', { 
-          totalMessages: stats.totalMessages,
-          failedMessages: stats.messagesWithFailures,
-          pendingMessages: stats.pendingMessages,
-          sentMessages: stats.messagesWithSuccess
+          totalMessages,
+          failedMessages: messagesWithFailures,
+          pendingMessages,
+          sentMessages: messagesWithSuccess
         });
       } catch (socketErr) {
         console.log('Socket emit failed:', socketErr.message);
@@ -267,11 +301,14 @@ const MessageController = {
       res.status(200).send({
         success: true,
         data: {
-          totalMessages: stats.totalMessages,
-          failedMessages: stats.messagesWithFailures,
-          pendingMessages: stats.pendingMessages,
-          sentMessages: stats.messagesWithSuccess,
+          totalMessages,
+          failedMessages: messagesWithFailures,
+          pendingMessages,
+          sentMessages: messagesWithSuccess,
           sendtoteltemplet: templateCount,
+          totalCampaigns: totalMessages,
+          totalSuccessCount: totalSuccess,
+          totalFailedCount: totalFailed,
         },
       });
     } catch (err) {

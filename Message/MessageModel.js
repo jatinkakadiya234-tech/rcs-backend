@@ -34,6 +34,8 @@ const MessageSchema = new mongoose.Schema({
       userReplay: Number,
       userCliked: Number,
       entityType: String,
+      totelDilivered: Number,
+      totalRead: Number,
       suggestionResponse: [{ type: mongoose.Schema.Types.Mixed }]
       
     },
