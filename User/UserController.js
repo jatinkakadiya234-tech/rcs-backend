@@ -728,35 +728,37 @@ if (eventType === "USER_MESSAGE" && orgMsgId) {
 
     const result = message.results[index];
 
-    // ✅ only matched message
     if (result.messageId === orgMsgId) {
 
-      // 👉 suggestionResponse exists => CLICK
+      // 🟢 FIRST TIME CLICK
       if (
         Array.isArray(result.suggestionResponse) &&
-        result.suggestionResponse.length > 0
+        result.suggestionResponse.length === 0
       ) {
         message.userClickCount += 1;
       }
 
-      // 👉 USER replied
-      message.userReplyCount += 1;
+      // 🔵 ALREADY CLICKED → NOW USER REPLY
+      else {
+        message.userReplyCount += 1;
+      }
 
-      // 👉 store response
+      // save latest response
       result.suggestionResponse = data?.entity?.suggestionResponse || [];
 
-      break; // 🔴 very important (extra loop stop)
+      break; // ⛔ stop loop
     }
   }
 
   await message.save();
 
   console.log(
-    `✅ USER_MESSAGE | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
+    `✅ USER_MESSAGE | Click: ${message.userClickCount} | Reply: ${message.userReplyCount}`
   );
 
   return res.status(200).json({ success: true });
 }
+
 
     /* =====================================================
        🔵 CASE 2 : STATUS EVENTS (DELIVERED / READ / FAILED)
