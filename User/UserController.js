@@ -685,44 +685,78 @@ webhookReceiver: async (req, res) => {
     /* =====================================================
        🟢 CASE 1 : USER MESSAGE (Reply / Button Click)
     ====================================================== */
-    if (eventType === "USER_MESSAGE" && orgMsgId) {
-      const message = await Message.findOne({
-        "results.messageId": orgMsgId,
-      });
+    // if (eventType === "USER_MESSAGE" && orgMsgId) {
+    //   const message = await Message.findOne({
+    //     "results.messageId": orgMsgId,
+    //   });
 
-      if (!message) {
-        return res.status(200).json({ success: true });
+    //   if (!message) {
+    //     return res.status(200).json({ success: true });
+    //   }
+
+    //  for (let index = 0; index < message.results.length; index++) {
+    // if(message.results[index].suggestionResponse.length >=0 ){
+    //      message.userClickCount = +1
+    //     message.results[index].suggestionResponse = data?.entity?.suggestionResponse
+    // }
+
+    // message.userReplyCount = +1
+    // message.results[index].suggestionResponse = data?.entity?.suggestionResponse
+    //  }
+     
+  
+
+    //   await message.save();
+
+    //   console.log(
+    //     `✅ USER_MESSAGE | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
+    //   );
+
+    //   return res.status(200).json({ success: true });
+    // }
+if (eventType === "USER_MESSAGE" && orgMsgId) {
+
+  const message = await Message.findOne({
+    "results.messageId": orgMsgId
+  });
+
+  if (!message) {
+    return res.status(200).json({ success: true });
+  }
+
+  for (let index = 0; index < message.results.length; index++) {
+
+    const result = message.results[index];
+
+    // ✅ only matched message
+    if (result.messageId === orgMsgId) {
+
+      // 👉 suggestionResponse exists => CLICK
+      if (
+        Array.isArray(result.suggestionResponse) &&
+        result.suggestionResponse.length > 0
+      ) {
+        message.userClickCount += 1;
       }
 
-      const index = message.results.findIndex(
-        (r) => r.messageId === orgMsgId
-      );
-      if (index === -1) {
-        return res.status(200).json({ success: true });
-      }
+      // 👉 USER replied
+      message.userReplyCount += 1;
 
-      const result = message.results[index];
+      // 👉 store response
+      result.suggestionResponse = data?.entity?.suggestionResponse || [];
 
-      // ✍️ Save last user reply (optional detail)
-      result.entityType = data?.entityType || null;
-      result.userReplay = data?.entity?.text || null;
-
-      // 🔢 GLOBAL reply count
-      message.totalReplies = (message.totalReplies || 0) + 1;
-
-      // 🎯 Button / suggestion click (GLOBAL)
-      if (data?.entity?.suggestionResponse) {
-        message.totalClicks = (message.totalClicks || 0) + 1;
-      }
-
-      await message.save();
-
-      console.log(
-        `✅ USER_MESSAGE | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
-      );
-
-      return res.status(200).json({ success: true });
+      break; // 🔴 very important (extra loop stop)
     }
+  }
+
+  await message.save();
+
+  console.log(
+    `✅ USER_MESSAGE | MsgId: ${orgMsgId} | Phone: ${userPhoneNumber}`
+  );
+
+  return res.status(200).json({ success: true });
+}
 
     /* =====================================================
        🔵 CASE 2 : STATUS EVENTS (DELIVERED / READ / FAILED)
