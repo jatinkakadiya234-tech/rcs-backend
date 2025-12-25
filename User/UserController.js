@@ -121,7 +121,7 @@ const checkBulkCapability = async (phoneNumbers, token) => {
         timeout: 10000,
       }
     );
-    console.log("bulk API===================================", res);
+    
     return res.data || null;
   } catch (error) {
     console.error(
