@@ -789,24 +789,22 @@ if (eventType === "USER_MESSAGE" && orgMsgId) {
 
       /* ---------- 📦 DELIVERED ---------- */
       if (
-        eventType === "MESSAGE_DELIVERED" &&
-        oldStatus !== "MESSAGE_DELIVERED"
+        eventType === "MESSAGE_DELIVERED" 
       ) {
         message.totalDelivered = (message.totalDelivered || 0) + 1;
       }
 
       /* ---------- 👁 READ ---------- */
       if (
-        eventType === "MESSAGE_READ" &&
-        oldStatus !== "MESSAGE_READ"
+        eventType === "MESSAGE_READ" 
       ) {
         message.totalRead = (message.totalRead || 0) + 1;
       }
 
       /* ---------- ❌ FAILED ---------- */
       if (
-        eventType === "SEND_MESSAGE_FAILURE" &&
-        oldStatus !== "SEND_MESSAGE_FAILURE"
+        eventType === "SEND_MESSAGE_FAILURE" 
+       
       ) {
         message.failedCount = (message.failedCount || 0) + 1;
 
