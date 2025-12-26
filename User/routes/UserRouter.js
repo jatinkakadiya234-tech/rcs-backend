@@ -1,6 +1,7 @@
 import  exxpress  from "express";
-import UserController from "./UserController.js";
-import upload from "../middleware/multerConfig.js";
+
+import upload from  "../../middleware/multerConfig.js";
+import UserController from "../controllers/UserController.js";
 
 const userRouter = exxpress.Router();
 

@@ -1,14 +1,81 @@
-import Message from "../Message/MessageModel.js";
-import User from "../User/UserModel.js";
-import Campaign from "../models/CampaignModel.js";
-import Audience from "../models/AudienceModel.js";
-import { fetchJioToken } from "../services/JioTokenService.js";
-import { sendJioSms } from "../services/JioSmsService.js";
+
+
+
+import User from "../../User/models/UserModel.js";
+import { CampaignModel, MessageModel } from "../../Message/index.js";
+import { fetchJioToken } from "../../User/controllers/UserController.js";
+import * as uuid from "uuid";
+import axios from "axios";
+import https from "https";
+
+const uuidv4 = uuid.v4;
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 100,
+});
+
+const sendJioSms = async (phoneNumber, content, token, type, retries = 2) => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      let formattedPhone = phoneNumber.toString().replace(/[^0-9]/g, "");
+
+      if (!formattedPhone.startsWith("91")) {
+        formattedPhone = "91" + formattedPhone;
+      }
+
+      formattedPhone = "+" + formattedPhone;
+
+      const messageId = `msg_${uuidv4()}`;
+
+      const url = `https://api.businessmessaging.jio.com/v1/messaging/users/${formattedPhone}/assistantMessages/async?messageId=${messageId}`;
+
+      const response = await axios.post(
+        url,
+        {
+          botId: process.env.JIO_ASSISTANT_ID,
+          content,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 15000,
+          httpsAgent,
+        }
+      );
+
+      return {
+        phone: formattedPhone,
+        status: response.status,
+        messageId,
+        result: "SUCCESS",
+        type,
+        attempt: attempt + 1,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      if (attempt === retries) {
+        return {
+          phone: phoneNumber,
+          status: error.response?.status || 500,
+          result: "FAILED",
+          error: error.response?.data || error.message,
+          attempt: attempt + 1,
+          timestamp: new Date(),
+        };
+      }
+
+      await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
+    }
+  }
+};
 
 const SendMessageController = {
   sendMessage: async (req, res) => {
-    const { sendMessagesInBatches } = await import("../utils/batchSender.js");
-    const { processRetryQueue } = await import("../utils/retryQueue.js");
+    const { sendMessagesInBatches } = await import("../../utils/batchSender.js");
+    const { processRetryQueue } = await import("../../utils/retryQueue.js");
     
     try {
       const { type, content, phoneNumbers=[], userId, campaignName, templateId } = req.body;
@@ -54,7 +121,7 @@ const SendMessageController = {
         audienceCount: phoneNumbers.length
       });
       
-      const createCampaign = await Campaign.create({
+      const createCampaign = await CampaignModel.create({
         campaignName,
         templateId,
         userId,
@@ -69,17 +136,10 @@ const SendMessageController = {
 
       // Create audience
       console.log('Creating audience for campaign:', createCampaign._id);
-      await Audience.create({
-        campaignId: createCampaign._id,
-        phoneNumbers,
-        totalCount: phoneNumbers.length,
-        validCount: phoneNumbers.length
-      });
-      console.log('Audience created successfully');
 
       // Create message record
       console.log('Creating message record');
-      await Message.create({
+      await MessageModel.create({
         CampaignName: campaignName,
         campaignId: createCampaign._id,
         userId,

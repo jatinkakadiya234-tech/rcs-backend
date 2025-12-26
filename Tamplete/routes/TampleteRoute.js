@@ -1,5 +1,5 @@
 import express from "express";  
-import { createTemplate, deleteTemplate, getTemplateById, getTemplates, updateTemplate, getUserTemplates } from "./TempleteController.js";
+import { createTemplate, deleteTemplate, getTemplateById, getTemplates, updateTemplate, getUserTemplates } from  "../controllers/TempleteController.js";
 
 
 const TemplateRoute = express.Router();

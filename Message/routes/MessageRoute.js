@@ -1,5 +1,5 @@
 import express from "express";
-import MessageController from "./MessageController.js";
+import MessageController from "../controllers/MessageController.js";
 
 const messagerouter = express.Router();
 
@@ -20,6 +20,23 @@ messagerouter.get("/recent/:userId", MessageController.getRecentOrders);
 
 // 📊 Get User Message Statistics
 messagerouter.get("/stats/:userId", MessageController.getUserMessageStats);
+
+// 📈 Weekly Chart Data
+messagerouter.get("/chart/weekly", MessageController.getWeeklyChartData);
+
+// 🔧 Admin Weekly Analytics - All Users
+messagerouter.get("/admin/analytics/weekly", MessageController.getWeeklyChartData);
+
+// 🔧 Admin Monthly Analytics - All Users
+messagerouter.get("/admin/analytics/monthly", MessageController.getMonthlyChartData);
+
+
+
+// 📊 Admin Summary - Total Users & Amounts
+messagerouter.get("/admin/summary", MessageController.getAdminSummary);
+
+// 📈 Monthly Chart Data
+
 
 // 📱 Check Messages for Phone Number
 // messagerouter.get("/check/:phoneNumber", checkNumberMessages);

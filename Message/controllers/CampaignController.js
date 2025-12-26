@@ -1,5 +1,6 @@
-import Campaign from "./CampaignModel.js";
-import MessageDetail from "./MessageDetailModel.js";
+import CampaignModel from "../models/CampaignModel.js";
+import MessageDetailModel from "../models/MessageDetailModel.js";
+
 
 const CampaignController = {
   getAllCampaigns: async (req, res) => {
@@ -7,12 +8,12 @@ const CampaignController = {
       const userId = req.user.id;
       const { page = 1, limit = 20 } = req.query;
 
-      const campaigns = await Campaign.find({ userId })
+      const campaigns = await CampaignModel.find({ userId })
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
-      const total = await Campaign.countDocuments({ userId });
+      const total = await CampaignModel.countDocuments({ userId });
 
       res.status(200).send({
         campaigns,
@@ -30,7 +31,7 @@ const CampaignController = {
       const { id } = req.params;
       const userId = req.user.id;
 
-      const campaign = await Campaign.findOne({ _id: id, userId });
+      const campaign = await CampaignModel.findOne({ _id: id, userId });
       if (!campaign) {
         return res.status(404).send({ message: "Campaign not found" });
       }
@@ -46,12 +47,12 @@ const CampaignController = {
       const { id } = req.params;
       const { page = 1, limit = 50 } = req.query;
 
-      const messages = await MessageDetail.find({ campaignId: id })
+      const messages = await MessageDetailModel.find({ campaignId: id })
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
-      const total = await MessageDetail.countDocuments({ campaignId: id });
+      const total = await MessageDetailModel.countDocuments({ campaignId: id });
 
       res.status(200).send({
         messages,
@@ -69,12 +70,12 @@ const CampaignController = {
       const { id } = req.params;
       const userId = req.user.id;
 
-      const campaign = await Campaign.findOneAndDelete({ _id: id, userId });
+      const campaign = await CampaignModel.findOneAndDelete({ _id: id, userId });
       if (!campaign) {
         return res.status(404).send({ message: "Campaign not found" });
       }
 
-      await MessageDetail.deleteMany({ campaignId: id });
+      await MessageDetailModel.deleteMany({ campaignId: id });
 
       res.status(200).send({ message: "Campaign deleted" });
     } catch (err) {

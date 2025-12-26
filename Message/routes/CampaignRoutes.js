@@ -1,6 +1,6 @@
 import express from "express";
-import CampaignController from "./CampaignController.js";
-import { authenticateToken } from "../middleware/auth.js";
+import { authenticateToken } from "../../middleware/cookieAuth.js";
+import CampaignController from "../controllers/CampaignController.js";
 
 const router = express.Router();
 

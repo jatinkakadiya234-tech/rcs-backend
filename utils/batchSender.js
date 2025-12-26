@@ -1,4 +1,4 @@
-import Message from "../Message/MessageModel.js";
+import Message from "../Message/models/MessageModel.js";
 import { emitMessageUpdate, emitBatchProgress } from "../socket.js";
 
 export const sendMessagesInBatches = async (

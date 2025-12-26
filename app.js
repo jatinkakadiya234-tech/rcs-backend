@@ -11,11 +11,11 @@ import { initSocket } from "./socket.js";
 
 // Routes
 import ConnectDB from "./config/Db.js";
-import userRouter from "./User/UserRouter.js";
-import TemplateRoute from "./Tamplete/TampleteRoute.js";
-import MessageApiRoute from "./Message/MessageRoute.js";
-import TransactionRoute from "./Transaction/TransactionRoute.js";
-import SendMessageRoute from "./SendMessage/SendMessageRoute.js";
+import { UserRouter } from "./User/index.js";
+import { TemplateRouter } from "./Tamplete/index.js";
+import { MessageRouter } from "./Message/index.js";
+import { TransactionRouter } from "./Transaction/index.js";
+import { SendMessageRouter } from "./SendMessage/index.js";
 
 dotenv.config();
 
@@ -35,7 +35,7 @@ ConnectDB();
 // 🔹 CORS Configuration
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://rcssender.com"],
+    origin: ["http://localhost:5174", "https://rcssender.com","*"],
     credentials: true,
   })
 );
@@ -60,14 +60,14 @@ app.get("/api/v1", (req, res) => {
 });
 
 // 🔹 Routes
-app.use("/api", userRouter);
-app.use("/api/v1/templates", TemplateRoute);
-app.use("/api/v1/message-reports", MessageApiRoute);
-app.use("/api/v1/transactions", TransactionRoute);
-app.use("/api/v1/send-message", SendMessageRoute);
+app.use("/api", UserRouter);
+app.use("/api/v1/templates", TemplateRouter);
+app.use("/api/v1/message-reports", MessageRouter);
+app.use("/api/v1/transactions", TransactionRouter);
+app.use("/api/v1/send-message", SendMessageRouter);
 
 // 🔹 Server Start
-const PORT = process.env.PORT || 8888;
+const PORT = process?.env?.PORT || 8880;
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

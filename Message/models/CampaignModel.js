@@ -11,8 +11,8 @@ const CampaignSchema = new mongoose.Schema({
   audienceCount: { type: Number, required: true },
   type: {
     type: String,
-    
-   
+    enum: ["text", "rcs", "carousel"],
+    required: true
   },
   content: { type: mongoose.Schema.Types.Mixed, required: true },
   cost: { type: Number, default: 0 },

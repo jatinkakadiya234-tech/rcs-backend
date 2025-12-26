@@ -1,4 +1,4 @@
-import Template from "./TampletModel.js";
+import Template from "../models/TampletModel.js";
 // 📌 Create Template
 export const createTemplate = async (req, res) => {
   try {
@@ -89,3 +89,14 @@ export const getUserTemplates = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+const TemplateController = {
+  createTemplate,
+  getTemplates,
+  getTemplateById,
+  updateTemplate,
+  deleteTemplate,
+  getUserTemplates
+};
+
+export default TemplateController;

@@ -1,20 +1,20 @@
 import bcrypt from "bcrypt";
 import axios from "axios";
 import jwt from "jsonwebtoken";
-import User from "./UserModel.js";
-import WalletRequest from "./WalletRequestModel.js";
+
+import WalletRequest from "../../User/models/WalletRequestModel.js";
 import * as uuid from "uuid";
 const uuidv4 = uuid.v4;
 import dotenv from "dotenv";
-import cloudinary from "../utils/cloudinary.js";
-import Message from "../Message/MessageModel.js";
-import TransactionController from "../Transaction/TransactionController.js";
-import Transaction from "../Transaction/TransactionModel.js";
+import cloudinary from "../../utils/cloudinary.js";
+import Message from "../../Message/models/MessageModel.js";
+import TransactionController from "../../Transaction/controllers/TransactionController.js";
+import Transaction from "../../Transaction/models/TransactionModel.js";
 import mongoose from "mongoose";
 import fs from "fs";
 import https from "https";
-import startSmsWorker from "../workers/sms.worker.js";
-import CampaignModel from "../Message/CampaignModel.js";
+import CampaignModel from "../../Message/models/CampaignModel.js";
+import User from "../models/UserModel.js";
 dotenv.config();
 
 const httpsAgent = new https.Agent({
@@ -1236,7 +1236,6 @@ if(createCamian) return res.status(200).send({
     try {
       const requests = await WalletRequest.find()
         .populate("userId", "name email phone")
-        .populate("processedBy", "name email")
         .sort({ requestedAt: -1 });
       res.status(200).send({ success: true, requests });
     } catch (err) {

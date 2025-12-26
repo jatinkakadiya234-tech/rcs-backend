@@ -1,5 +1,5 @@
-import Transaction from "./TransactionModel.js";
-import User from "../User/UserModel.js";
+import User from "../../User/models/UserModel.js";
+import TransactionModel from "../models/TransactionModel.js";
 
 const TransactionController = {
   createTransaction: async (userId, type, amount, description, source, referenceId = null) => {
@@ -8,7 +8,7 @@ const TransactionController = {
       const balanceBefore = user.Wallet;
       const balanceAfter = type === "credit" ? balanceBefore + amount : balanceBefore - amount;
       
-      const transaction = new Transaction({
+      const transaction = new TransactionModel({
         userId,
         type,
         amount,
