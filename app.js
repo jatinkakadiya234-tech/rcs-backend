@@ -35,7 +35,7 @@ ConnectDB();
 // 🔹 CORS Configuration
 app.use(
   cors({
-    origin: ["http://localhost:5174", "https://rcssender.com","*"],
+    origin: ["http://localhost:5174", "https://rcssender.com","http://localhost:5173"],
     credentials: true,
   })
 );
